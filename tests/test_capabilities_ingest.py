@@ -217,3 +217,21 @@ def test_populating_a_slice_does_change_the_digest(snapshot):
     before = snapshot.digest()
     cap.ingest_storage_skus(snapshot, storage_payload(), as_of=AS_OF)
     assert snapshot.digest() != before
+
+
+def test_region_zones_do_not_imply_zonal_deployability(snapshot):
+    """Physical topology and deployability are different facts, and they diverge
+    in real data: westeurope reports three zones while the Postgres capabilities
+    API reports no zone-redundant HA there. The region-derived capability is a
+    necessary condition, never a sufficient one."""
+    cap.ingest_region_capabilities(snapshot, as_of=AS_OF)
+    cap.ingest_postgres_capabilities(
+        snapshot,
+        {"westeurope": pg(zone_redundant="Disabled", zr_and_geo="Disabled", geo="Enabled")},
+        as_of=AS_OF,
+    )
+    assert snapshot.capability_available(cap.ANY_RESOURCE_TYPE, "availability-zones", "westeurope")
+    assert snapshot.capability_available(POSTGRES, "zone-redundant-ha", "westeurope") is False
+
+    detail = snapshot.capability(cap.ANY_RESOURCE_TYPE, "availability-zones").detail
+    assert "physical topology" in detail

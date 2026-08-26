@@ -244,7 +244,7 @@ a source-specific resolver**:
 
 | Capability | Resolved from | Shape |
 |---|---|---|
-| `availability-zones` | the region table | zone count, no API call |
+| `availability-zones` | the region table | zone count, no API call — **topology, not deployability** |
 | `zone-redundant-storage`, `geo-redundant-storage`, `premium-block-blob` | `Microsoft.Storage/skus` | encoded in **SKU names** (`Standard_ZRS`, `Standard_GZRS`) |
 | `zone-redundant-ha`, `geo-backup` | `Microsoft.DBforPostgreSQL/locations/{loc}/capabilities` | explicit flags, **one call per region** |
 
@@ -253,7 +253,16 @@ Everything else stays `None` — unknown, a risk on the surviving candidate, nev
 an elimination. Coverage is uneven by nature, since most resource providers
 expose no capabilities API at all.
 
-**The API can be more current than the docs, and should win.** `westeurope`
+**Having zones is not the same as being able to deploy zonally.** The locations
+API reports physical topology; it cannot say whether new zonal deployments are
+currently being accepted. The two visibly diverge in the snapshot: `westeurope`
+reports three availability zones *and* reports no zone-redundant HA for Postgres.
+So the region-derived `availability-zones` capability is a **necessary condition,
+never a sufficient one** — where a service-specific zonal capability exists it is
+the authority and must be checked as well, and where none exists the residual
+uncertainty belongs on the candidate as a risk.
+
+**The API can be more current than the docs, and wins.** `westeurope`
 reports `zoneRedundantHaSupported: Disabled` despite having three availability
 zones — which looks wrong until you read the [Postgres regions
 table](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/overview),

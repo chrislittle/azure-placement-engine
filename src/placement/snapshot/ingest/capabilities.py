@@ -94,7 +94,19 @@ ANY_RESOURCE_TYPE = "*"
 def ingest_region_capabilities(
     snapshot: WorldSnapshot, *, as_of: datetime | None = None, minimum_zones: int = 3
 ) -> WorldSnapshot:
-    """Derive region-level capabilities from the region table. No API call."""
+    """Derive region-level capabilities from the region table. No API call.
+
+    **This reports physical topology, not deployability.** The locations API says
+    a region *has* availability zones; it cannot say whether new zonal
+    deployments are currently being accepted there. The two genuinely diverge:
+    `westeurope` reports three zones while the Postgres capabilities API reports
+    no zone-redundant HA in the same region.
+
+    So this capability is a necessary condition, never a sufficient one. Where a
+    service-specific zonal capability exists it is the authority and must be
+    checked in addition; where none exists, having zones is the best available
+    signal and the residual uncertainty belongs on the candidate as a risk.
+    """
     if not snapshot.regions:
         raise IngestError("region capabilities need the region slice first")
 
@@ -109,7 +121,10 @@ def ingest_region_capabilities(
         resource_type=ANY_RESOURCE_TYPE,
         regions=zoned,
         source=REGION_SOURCE,
-        detail=f"region reports {minimum_zones} or more availability zones",
+        detail=(
+            f"region reports {minimum_zones} or more availability zones (physical topology; "
+            f"not a guarantee that new zonal deployments are being accepted)"
+        ),
     )
     snapshot.sources[REGION_SOURCE] = SourceRef(
         source=REGION_SOURCE,
