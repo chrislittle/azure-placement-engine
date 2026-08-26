@@ -47,8 +47,9 @@ Early. Contracts, scenarios, and the first ingester are in; the solver is not.
 - [x] Tenant context — SKU restrictions **and vCPU quota** as remediation signals
 - [x] `ape collect` — one-command reproducible collection
 - [x] `knowledge/` — curated rules extracted from code, dated and sourced
-- [ ] **Solver** — constrain, compose, score, record
-- [ ] Ingester 5 — retail pricing and latency
+- [x] **Solver** — resolve, constrain, derive topology, score, record
+- [ ] Ingester 5 — latency matrix and retail pricing (the two unscored dimensions)
+- [ ] Secondary-region selection informed by latency
 - [ ] Tenant context — policy `allowedLocations`, existing footprint
 - [ ] Constraint solver, topology composition, scoring
 
@@ -69,7 +70,13 @@ API responses, so a projection bug can be fixed and replayed without
 re-downloading ~250 MB. Individual failures are normal — Postgres is not offered
 in every region, and that is a real answer rather than an error.
 
-Validate a requirements file and see how the engine reads it:
+Decide where a workload should run:
+
+```bash
+ape place scenarios/eu-residency.yaml --tenant tenant-context.json -o decision.json
+```
+
+Or just check how the engine reads a requirements file:
 
 ```bash
 ape validate scenarios/eu-residency.yaml

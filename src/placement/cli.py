@@ -3,8 +3,8 @@
 Output is kept ASCII-only: Windows consoles default to cp1252, and a stray
 arrow glyph will crash the command rather than degrade.
 
-Deliberately small for now: build and inspect snapshots, and validate a
-requirements file. The placement command itself lands with the solver.
+Collect payloads, build and inspect snapshots, validate a requirements file, and
+decide a placement.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from rich.table import Table
 
 from placement import __version__, collect as collect_mod, knowledge
 from placement.contracts import load_requirements
+from placement.engine import decide
 from placement.snapshot import store
 from placement.snapshot.ingest import PayloadError, read_payload
 from placement.snapshot.ingest import capabilities as capabilities_ingest
@@ -26,6 +27,7 @@ from placement.snapshot.ingest import regions as regions_ingest
 from placement.snapshot.ingest import services as services_ingest
 from placement.snapshot.model import WorldSnapshot
 from placement.tenant import compute_restrictions
+from placement.tenant.model import TenantContext
 
 app = typer.Typer(help="Azure Placement Engine", no_args_is_help=True, add_completion=False)
 snapshot_app = typer.Typer(help="Build and inspect pinned world snapshots.", no_args_is_help=True)
@@ -465,6 +467,89 @@ def validate(
 
     weights = req.priorities.normalised()
     console.print("  weights: " + ", ".join(f"{k}={v:.2f}" for k, v in sorted(weights.items())))
+
+
+@app.command()
+def place(
+    requirements_file: Path = typer.Argument(..., exists=True, dir_okay=False),
+    snapshot_version: str = typer.Option(None, "--snapshot", help="Defaults to the newest."),
+    tenant_file: Path | None = typer.Option(
+        None, "--tenant", exists=True, dir_okay=False, help="Tenant context from `--tenant-out`."
+    ),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Write the decision record here."),
+) -> None:
+    """Decide where a workload should run."""
+    try:
+        req = load_requirements(requirements_file)
+        snap = store.load(snapshot_version or store.latest())
+    except Exception as exc:  # noqa: BLE001
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    tenant = (
+        TenantContext.model_validate_json(tenant_file.read_text(encoding="utf-8"))
+        if tenant_file
+        else None
+    )
+
+    record = decide(req, snap, tenant)
+
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(record.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+
+    console.print(f"[bold]{record.workload}[/bold]  snapshot {record.snapshot.version}")
+    console.print("")
+
+    if not record.feasible:
+        err.print("[red]No region satisfies these requirements.[/red]")
+    else:
+        best = record.recommended
+        console.print(f"[green]Recommended:[/green] {best.summary}")
+
+        table = Table(header_style="bold")
+        table.add_column("dimension")
+        table.add_column("score", justify="right")
+        table.add_column("weight", justify="right")
+        table.add_column("why")
+        for name, sub in sorted(best.subscores.items()):
+            table.add_row(
+                name,
+                f"{sub.value:.2f}" if sub.weight else "-",
+                f"{sub.weight:.2f}" if sub.weight else "unscored",
+                sub.rationale[:64],
+            )
+        console.print(table)
+
+        if record.alternatives:
+            alternatives = ", ".join(
+                f"{c.placements[0].region} ({c.score:.2f})" for c in record.alternatives
+            )
+            console.print(f"Alternatives: {alternatives}")
+        for risk in best.risks[:4]:
+            console.print(f"  [yellow]risk[/yellow] ({risk.severity}) {risk.detail[:96]}")
+
+    blocked = record.blocked_regions()
+    actionable = record.actionable_eliminations()
+    liftable = {e.region for e in actionable}
+    console.print("")
+    console.print(
+        f"{len(blocked)} regions ruled out, "
+        f"[cyan]{len(liftable)} liftable by a request[/cyan]"
+    )
+    for elimination in actionable[:6]:
+        remediation = elimination.remediation
+        console.print(
+            f"  {elimination.region:22s} {remediation.kind.value:24s} "
+            f"[dim]{remediation.tier.value}[/dim]"
+        )
+
+    for warning in record.warnings:
+        console.print(f"  [yellow]![/yellow] [dim]{warning[:104]}[/dim]")
+
+    if out:
+        console.print("")
+        console.print(f"Wrote {out}")
 
 
 if __name__ == "__main__":
