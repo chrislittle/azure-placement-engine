@@ -91,7 +91,17 @@ class RemediationKind(str, Enum):
     REGION_ACCESS_REQUEST = "region-access-request"
     ZONAL_ACCESS_REQUEST = "zonal-access-request"
     QUOTA_INCREASE = "quota-increase"
+    WAIT_TEMPORARY_BLOCK = "wait-temporary-block"  # resolves on its own; nobody to ask
     UNKNOWN = "unknown"                          # may be requestable; not established
+
+
+#: A refused quota request is not the end of the road either — internal
+#: escalation routinely unblocks them. So a quota or entitlement gap must never
+#: remove a region from consideration; it annotates one.
+ESCALATION_NOTE = (
+    "A refused request is not final: quota and access denials can be escalated "
+    "internally, so treat this as an annotation on the region rather than a closed door."
+)
 
 
 class AdjustmentTier(str, Enum):
@@ -311,6 +321,19 @@ class Candidate(Record):
     placements: list[Placement]
     components: list[ComponentDecision]
     flows: list[FlowOutcome] = Field(default_factory=list)
+    remediations: list["Remediation"] = Field(
+        default_factory=list,
+        description=(
+            "Actions needed before this candidate can be deployed. A region requiring a quota "
+            "increase is still a viable recommendation — quota and access gaps are annotations, "
+            "not exclusions, since even a refused request can be escalated. Empty means "
+            "deployable as it stands."
+        ),
+    )
+
+    @property
+    def deployable_today(self) -> bool:
+        return not self.remediations
     score: float = Field(ge=0.0, le=1.0)
     subscores: dict[str, Subscore]
     risks: list[Risk] = Field(default_factory=list)

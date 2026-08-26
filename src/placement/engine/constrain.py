@@ -19,11 +19,16 @@ Three rules run through all of it:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+from placement import knowledge
 from placement.contracts.decision import (
+    AdjustmentTier,
     Elimination,
     EliminationStage,
     Evidence,
     Remediation,
+    RemediationKind,
     Risk,
 )
 from placement.contracts.requirements import Requirements
@@ -39,12 +44,23 @@ class Verdict:
     candidates: list[str] = field(default_factory=list)
     eliminations: list[Elimination] = field(default_factory=list)
     risks: dict[str, list[Risk]] = field(default_factory=dict)
+    remediations: dict[str, list[Remediation]] = field(default_factory=dict)
 
     def eliminate(self, elimination: Elimination) -> None:
         self.eliminations.append(elimination)
 
     def risk(self, region: str, risk: Risk) -> None:
         self.risks.setdefault(region, []).append(risk)
+
+    def needs(self, region: str, remediation: Remediation) -> None:
+        """Record an action required before this region can be used.
+
+        Deliberately not an elimination. Entitlement, quota and temporary
+        platform blocks all change: a refused quota request can be escalated
+        internally, and a temporary block lifts on its own. Removing the region
+        would overstate the finding and push the customer somewhere worse.
+        """
+        self.remediations.setdefault(region, []).append(remediation)
 
 
 def _evidence(
@@ -229,6 +245,51 @@ def apply(
                     state = snapshot.capability_available("*", capability, region.name)
 
                 if state is False:
+                    blocked = knowledge.temporary_block(
+                        component.resource_type, capability, region.name
+                    )
+                    if blocked:
+                        # Supported here, just paused for new deployments. The
+                        # API cannot tell this apart from never-supported;
+                        # curated knowledge can, and the difference decides
+                        # whether the region survives at all. A migration is
+                        # permanent and this is not.
+                        verdict.risk(
+                            region.name,
+                            Risk(
+                                severity="high",
+                                category="temporary-block",
+                                detail=(
+                                    f"'{capability}' on {component.resource_type} is supported in "
+                                    f"{region.name} but {blocked['reason']}"
+                                ),
+                                mitigation=(
+                                    "Resolves without action - plan around it or wait. Do not "
+                                    "migrate on account of it."
+                                ),
+                                evidence=[
+                                    Evidence(
+                                        source="knowledge:temporary-blocks",
+                                        as_of=datetime.now(timezone.utc),
+                                        ref=blocked.get("reference"),
+                                        detail=blocked["provenance"],
+                                        confidence=0.8,
+                                    )
+                                ],
+                            ),
+                        )
+                        verdict.needs(
+                            region.name,
+                            Remediation(
+                                kind=RemediationKind.WAIT_TEMPORARY_BLOCK,
+                                detail=f"'{capability}' in {region.name}: {blocked['reason']}",
+                                tier=AdjustmentTier.NOT_ADJUSTABLE,
+                                reference=blocked.get("reference"),
+                                note="Nobody to ask; this lifts on its own.",
+                            ),
+                        )
+                        continue
+
                     verdict.eliminate(
                         Elimination(
                             region=region.name,
@@ -331,29 +392,58 @@ def apply(
                         family=sku.family if sku else None,
                         vcpus_required=required,
                     )
-                    if not assessment.deployable:
-                        verdict.eliminate(
-                            Elimination(
-                                region=region.name,
-                                stage=EliminationStage.CAPACITY,
-                                rule="tenant.deployability",
-                                component=component.name,
-                                reason=assessment.reason,
-                                remediation=assessment.remediation,
+                    if not assessment.deployable and assessment.remediation is not None:
+                        if assessment.remediation.kind is RemediationKind.NONE:
+                            # The subscription's offer type excludes the SKU. No
+                            # request and no escalation changes that, so this is
+                            # one of the few genuine exclusions in this space.
+                            verdict.eliminate(
+                                Elimination(
+                                    region=region.name,
+                                    stage=EliminationStage.CAPACITY,
+                                    rule="tenant.offer-type",
+                                    component=component.name,
+                                    reason=assessment.reason,
+                                    remediation=assessment.remediation,
+                                    evidence=[
+                                        Evidence(
+                                            source="tenant-context",
+                                            as_of=tenant.collected_at,
+                                            detail=assessment.reason,
+                                            confidence=0.9,
+                                        )
+                                    ],
+                                )
+                            )
+                            eliminated = True
+                            break
+
+                        # Access, zonal access and quota annotate rather than
+                        # exclude: a refused request can be escalated
+                        # internally, so removing the region would overstate it.
+                        verdict.needs(region.name, assessment.remediation)
+                        verdict.risk(
+                            region.name,
+                            Risk(
+                                severity="high",
+                                category="not-deployable-today",
+                                detail=assessment.reason,
+                                mitigation=(
+                                    f"{assessment.remediation.kind.value} "
+                                    f"({assessment.remediation.tier.value})"
+                                ),
                                 evidence=[
                                     Evidence(
                                         source="tenant-context",
                                         as_of=tenant.collected_at,
                                         detail=assessment.reason,
-                                        # Tenant state changes under us; it was
+                                        # Tenant state changes under us; this was
                                         # true at collection time, not now.
                                         confidence=0.9,
                                     )
                                 ],
-                            )
+                            ),
                         )
-                        eliminated = True
-                        break
 
                     if sku and tenant.can_reserve(sku_name, region.name) is False:
                         verdict.risk(

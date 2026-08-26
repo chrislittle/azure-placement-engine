@@ -154,6 +154,32 @@ def adjustment_tier(provider: str, *, zonal: bool = False) -> str:
     return str(entry.get("zonal" if zonal else "regional") or "unknown")
 
 
+def temporary_block(resource_type: str, capability: str, region: str) -> dict[str, Any] | None:
+    """Whether a capability is temporarily blocked here rather than absent.
+
+    The API reports both as unsupported, so this is the only way to tell them
+    apart — and the difference decides whether a region is eliminated or merely
+    flagged. Returns the block entry, including its provenance, or None.
+    """
+    try:
+        entry = load("temporary-blocks")
+    except KnowledgeError:
+        return None
+
+    for block in entry.get("blocks") or []:
+        if (
+            str(block.get("resource_type", "")).lower() == resource_type.lower()
+            and str(block.get("capability", "")).lower() == capability.lower()
+            and region in (block.get("regions") or [])
+        ):
+            return {
+                **block,
+                "provenance": entry.provenance(),
+                "reference": entry.get("reference"),
+            }
+    return None
+
+
 def capacity_signal(name: str) -> dict[str, Any] | None:
     """One entry from the capacity-signals file, e.g. 'spot-placement-score'."""
     signals = load("capacity-signals").get("signals") or {}

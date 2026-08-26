@@ -90,7 +90,8 @@ def _relaxations(
     """
     out: list[Relaxation] = []
 
-    for region, remediation in sorted(constrain.remediable(verdict).items()):
+    for region, remediations in sorted(verdict.remediations.items()):
+        remediation = remediations[0]
         out.append(
             Relaxation(
                 target=region,
@@ -98,7 +99,7 @@ def _relaxations(
                 detail=remediation.detail,
                 unlocks=[region],
                 gives_up=(
-                    f"nothing in the design - this is a request, not a concession "
+                    "nothing in the design - this is a request, not a concession "
                     f"({remediation.tier.value})"
                 ),
             )
@@ -177,19 +178,28 @@ def decide(
 
     sku_hints = sorted({s for c in components for s in c.sku_hints})
 
+    # Ranked on fit, with readiness as a tiebreak only.
+    #
+    # Deliberately not readiness-first. Whether a quota ticket is worth raising
+    # is the customer's call, not the engine's — sorting on it would bury a
+    # region they already operate in beneath fifty they have never used, for a
+    # condition that may lift on its own. The record makes readiness impossible
+    # to miss; it does not decide it.
     scored = sorted(
         (
-            (score.total(sub), region, sub)
+            (score.total(sub), not verdict.remediations.get(region), region, sub)
             for region, sub in (
                 (r, score.score_region(requirements, snapshot, r, sku_hints))
                 for r in verdict.candidates
             )
         ),
-        key=lambda item: (-item[0], item[1]),
+        key=lambda item: (-item[0], -item[1], item[2]),
     )
 
     candidates: list[Candidate] = []
-    for rank, (value, region, subscores) in enumerate(scored[: max_alternatives + 1], start=1):
+    for rank, (value, _ready, region, subscores) in enumerate(
+        scored[: max_alternatives + 1], start=1
+    ):
         secondary = (
             _pick_secondary(region, verdict.candidates, requirements, snapshot)
             if _needs_secondary(components, min_zones)
@@ -249,8 +259,10 @@ def decide(
         ]
 
         risks: list[Risk] = list(verdict.risks.get(region, []))
+        remediations = list(verdict.remediations.get(region, []))
         if secondary:
             risks.extend(verdict.risks.get(secondary, []))
+            remediations.extend(verdict.remediations.get(secondary, []))
 
         candidates.append(
             Candidate(
@@ -261,11 +273,17 @@ def decide(
                 score=round(value, 4),
                 subscores=subscores,
                 risks=risks[:12],
+                remediations=remediations,
                 summary=(
                     f"{region}"
                     + (f" with {secondary} as secondary" if secondary else "")
-                    + f" - scored {value:.2f} on {sum(1 for s in subscores.values() if s.weight > 0)} "
-                    "of the declared dimensions"
+                    + f" - scored {value:.2f} on "
+                    + f"{sum(1 for s in subscores.values() if s.weight > 0)} declared dimensions"
+                    + (
+                        ""
+                        if not remediations
+                        else f"; needs {len(remediations)} action(s) before deployment"
+                    )
                 ),
             )
         )

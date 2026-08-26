@@ -521,9 +521,26 @@ def place(
             )
         console.print(table)
 
+        if best.remediations:
+            console.print("")
+            console.print(
+                f"[yellow]Not deployable as it stands[/yellow] - "
+                f"{len(best.remediations)} action(s) required first:"
+            )
+            for remediation in best.remediations:
+                console.print(
+                    f"  {remediation.kind.value:24s} [dim]{remediation.tier.value}[/dim]  "
+                    f"{remediation.detail[:76]}"
+                )
+        else:
+            console.print("  [green]deployable as it stands[/green]")
+
         if record.alternatives:
             alternatives = ", ".join(
-                f"{c.placements[0].region} ({c.score:.2f})" for c in record.alternatives
+                f"{c.placements[0].region} ({c.score:.2f}"
+                + ("" if c.deployable_today else ", needs action")
+                + ")"
+                for c in record.alternatives
             )
             console.print(f"Alternatives: {alternatives}")
         for risk in best.risks[:4]:

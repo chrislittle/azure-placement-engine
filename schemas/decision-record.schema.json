@@ -43,6 +43,14 @@
           "title": "Flows",
           "type": "array"
         },
+        "remediations": {
+          "description": "Actions needed before this candidate can be deployed. A region requiring a quota increase is still a viable recommendation \u2014 quota and access gaps are annotations, not exclusions, since even a refused request can be escalated. Empty means deployable as it stands.",
+          "items": {
+            "$ref": "#/$defs/Remediation"
+          },
+          "title": "Remediations",
+          "type": "array"
+        },
         "score": {
           "maximum": 1.0,
           "minimum": 0.0,
@@ -606,6 +614,7 @@
         "region-access-request",
         "zonal-access-request",
         "quota-increase",
+        "wait-temporary-block",
         "unknown"
       ],
       "title": "RemediationKind",

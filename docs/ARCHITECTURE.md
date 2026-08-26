@@ -527,6 +527,49 @@ positive here sends someone at a reservation that fails.
 > behaviour. Findings only — no subscription identifiers or engagement details
 > are reproduced here.
 
+### Three kinds of "no", and only one of them eliminates
+
+The most consequential distinction in the engine, and the easiest to collapse:
+
+| Kind | Example | Treatment |
+|---|---|---|
+| **Never** | the service does not exist in that region | **eliminate** |
+| **Not yet, for you** | region access or quota not granted | annotate + remediation |
+| **Not right now** | new zone-redundant HA deployments temporarily blocked | annotate + wait |
+
+Only the first is a genuine "no". The other two are things that *change* — and
+treating them as eliminations produces actively bad advice, because a migration
+is permanent while the condition is not.
+
+**Entitlement and quota gaps never remove a region.** A refused quota request is
+not the end of the road either: internal escalation routinely unblocks them. So
+a region needing a quota increase remains a ranked candidate carrying a
+`Remediation`, not an elimination. The one real exclusion in this space is a
+`QuotaId` restriction, where the subscription's *offer type* excludes the SKU —
+no request and no escalation changes that.
+
+**Temporary blocks are invisible to the API.** Postgres reports
+`zoneRedundantHaSupported: Disabled` identically whether a region never
+supported it or has it paused this month. Only the published regions table
+distinguishes them, so it is curated in
+[`knowledge/temporary-blocks.yaml`](../knowledge/temporary-blocks.yaml). Their
+remediation is `wait-temporary-block` at tier `not-adjustable`: there is nobody
+to ask, and it lifts on its own.
+
+**Readiness is a tiebreak, not the ranking.** Candidates are ordered on fit, with
+deployable-today breaking ties. Sorting on readiness would bury a region the
+customer already operates in beneath fifty they have never used, for a condition
+that may resolve next month. Whether a ticket is worth raising is theirs to
+decide; the record makes readiness impossible to miss and leaves the decision
+alone.
+
+The `lz-expansion` scenario shows the whole chain working. West Europe reports no
+zone-redundant HA, which under the old model eliminated it and recommended North
+Europe — telling a customer to migrate out of the region they already run in.
+Now it scores 0.99, is recommended, and carries one line saying the capability is
+temporarily blocked and resolves without action, with North Europe offered at
+0.70 if they cannot wait.
+
 ### Not every elimination is final
 
 Azure region and zonal access are **not open by default**. A number of regions

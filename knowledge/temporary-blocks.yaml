@@ -1,0 +1,44 @@
+# Capabilities that are supported in a region but temporarily unavailable for
+# NEW deployments.
+#
+# This is a third kind of "no", and the one most easily got wrong:
+#
+#   never          the service or capability does not exist there    -> eliminate
+#   not yet, you   entitlement or quota gap                          -> requestable
+#   not right now  platform-side temporary block                     -> wait
+#
+# The API cannot distinguish the first from the third. Postgres reports
+# `zoneRedundantHaSupported: Disabled` identically whether a region never
+# supported it or has it paused this month. Only the published regions table
+# distinguishes them, marking temporarily-blocked regions with a footnote.
+#
+# Treating a temporary block as permanent produces genuinely bad advice: a
+# migration is permanent and the block is not, so it can push a customer out of
+# a region they already run in for a condition that resolves on its own.
+reviewed: 2026-08-26
+source: >
+  Azure Database for PostgreSQL flexible server regions table, which marks these
+  regions as supporting zone-redundant HA but with new zone-redundant HA
+  deployments temporarily blocked.
+reference: https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/overview
+confidence: medium
+recheck_after: 2026-11-30
+
+blocks:
+  - resource_type: Microsoft.DBforPostgreSQL/flexibleServers
+    capability: zone-redundant-ha
+    reason: new zone-redundant HA deployments are temporarily blocked
+    regions:
+      - brazilsouth
+      - centralindia
+      - eastasia
+      - eastus
+      - eastus2
+      - germanywestcentral
+      - mexicocentral
+      - northeurope
+      - qatarcentral
+      - southcentralus
+      - southeastasia
+      - westeurope
+      - westus2

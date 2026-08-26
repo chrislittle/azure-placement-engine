@@ -270,3 +270,107 @@ def test_every_scenario_produces_a_record(path, snapshot):
     assert record.workload
     assert record.requirements_digest.startswith("sha256:")
     assert record.warnings
+
+
+# --------------------------------------------------------------------------
+# Three kinds of "no"
+# --------------------------------------------------------------------------
+
+
+def _pg_requirements(**overrides):
+    base = {
+        "workload": "w",
+        "components": [
+            {
+                "name": "db",
+                "service": "Microsoft.DBforPostgreSQL/flexibleServers",
+                "capabilities": ["zone-redundant-ha"],
+            }
+        ],
+    }
+    return Requirements.model_validate({**base, **overrides})
+
+
+def _with_pg_capability(snapshot, **regions):
+    """Record zone-redundant-ha support explicitly for the given regions."""
+    payloads = {
+        region: {"value": [{"name": "F", "zoneRedundantHaSupported": "Enabled" if ok else "Disabled"}]}
+        for region, ok in regions.items()
+    }
+    return cap.ingest_postgres_capabilities(snapshot, payloads, as_of=AS_OF)
+
+
+def test_temporary_block_is_a_risk_not_an_elimination(snapshot):
+    """westeurope reports zone-redundant HA as unsupported because new
+    deployments are paused, not because it never worked there. A migration is
+    permanent and the block is not, so eliminating would be bad advice."""
+    snap = _with_pg_capability(snapshot, westeurope=False)
+    record = decide(_pg_requirements(), snap)
+
+    assert not record.eliminations_for("westeurope")
+    regions = {p.region for c in [record.recommended, *record.alternatives] if c for p in c.placements}
+    assert "westeurope" in regions
+
+    candidate = next(
+        c for c in [record.recommended, *record.alternatives] if c.placements[0].region == "westeurope"
+    )
+    assert any(r.category == "temporary-block" for r in candidate.risks)
+    assert any(
+        rem.kind.value == "wait-temporary-block" for rem in candidate.remediations
+    )
+
+
+def test_a_capability_absent_and_not_temporarily_blocked_still_eliminates(snapshot):
+    """Only the curated list makes a block temporary. Everything else is a real
+    absence — `geo-backup` appears in no block entry, so an unsupported region
+    is eliminated as usual."""
+    snap = cap.ingest_postgres_capabilities(
+        snapshot,
+        {"westeurope": {"value": [{"name": "F", "geoBackupSupported": "Disabled"}]}},
+        as_of=AS_OF,
+    )
+    record = decide(
+        _pg_requirements(
+            components=[
+                {
+                    "name": "db",
+                    "service": "Microsoft.DBforPostgreSQL/flexibleServers",
+                    "capabilities": ["geo-backup"],
+                }
+            ]
+        ),
+        snap,
+    )
+    assert any(
+        e.rule == "capability:geo-backup" for e in record.eliminations_for("westeurope")
+    )
+
+
+def test_temporary_block_remediation_has_nobody_to_ask(snapshot):
+    snap = _with_pg_capability(snapshot, westeurope=False)
+    record = decide(_pg_requirements(), snap)
+    candidate = next(
+        c for c in [record.recommended, *record.alternatives] if c.placements[0].region == "westeurope"
+    )
+    remediation = next(r for r in candidate.remediations if r.kind.value == "wait-temporary-block")
+    assert remediation.tier.value == "not-adjustable"
+    assert "lifts on its own" in remediation.note
+
+
+def test_readiness_is_a_tiebreak_not_the_ranking(snapshot):
+    """Whether a ticket is worth raising is the customer's call. Sorting on
+    readiness would bury a region they already operate in beneath fifty they
+    have never used."""
+    snap = _with_pg_capability(snapshot, westeurope=False)
+    record = decide(
+        _pg_requirements(landingZone={"existing_regions": ["westeurope"]}),
+        snap,
+    )
+    assert record.recommended.placements[0].region == "westeurope"
+    assert not record.recommended.deployable_today
+
+
+def test_deployable_today_is_visible_on_every_candidate(snapshot):
+    record = decide(requirements(), snapshot)
+    for candidate in [record.recommended, *record.alternatives]:
+        assert candidate.deployable_today == (not candidate.remediations)
