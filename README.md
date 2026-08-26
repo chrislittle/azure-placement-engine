@@ -121,3 +121,6 @@ python -m venv .venv
 - **Never imply certainty you don't have.** Capacity has no authoritative API;
   it is scored with explicit confidence, never asserted.
 - **Record the losers.** "Why not region X" is most of the value.
+- **Distinguish "unavailable" from "not yet requested."** Azure region and
+  zonal access are not open by default; much of what looks unavailable is a
+  support request away. Eliminations carry the remediation that would lift them.

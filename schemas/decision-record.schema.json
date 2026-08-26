@@ -166,7 +166,7 @@
     },
     "Elimination": {
       "additionalProperties": false,
-      "description": "Why a region never reached scoring.",
+      "description": "Why a region never reached scoring.\n\nAn elimination carrying a `remediation` is **provisional**: the region is out\ntoday, but the customer can act to bring it back. Consumers must not present\nthose identically to permanent ones.",
       "properties": {
         "region": {
           "title": "Region",
@@ -207,6 +207,18 @@
         "reason": {
           "title": "Reason",
           "type": "string"
+        },
+        "remediation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Remediation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Set when the elimination is liftable by a request."
         },
         "evidence": {
           "items": {
@@ -497,6 +509,77 @@
       ],
       "title": "Relaxation",
       "type": "object"
+    },
+    "Remediation": {
+      "additionalProperties": false,
+      "description": "A concrete action that would lift an elimination.\n\nDistinct from `Relaxation`, and the difference matters to whoever reads the\nrecord. A **remediation** changes the customer's Azure entitlements and\nleaves the design intact \u2014 request access to the region, raise the quota. A\n**relaxation** changes the requirements themselves \u2014 split a flow, drop a\ncapability. One is a ticket; the other is a design concession.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/RemediationKind"
+        },
+        "detail": {
+          "description": "What specifically is gated.",
+          "title": "Detail",
+          "type": "string"
+        },
+        "process": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How to request it.",
+          "title": "Process"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Documentation URL for the process.",
+          "title": "Reference"
+        },
+        "lead_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rough turnaround, when known. Requests are reviewed by engineering, so this is planning information, not a guarantee.",
+          "title": "Lead Time"
+        }
+      },
+      "required": [
+        "kind",
+        "detail"
+      ],
+      "title": "Remediation",
+      "type": "object"
+    },
+    "RemediationKind": {
+      "description": "Whether an elimination can be lifted, and by what action.\n\nCentral to the engine being useful rather than merely correct. Azure region\nand zonal access are **not open by default** \u2014 a number of regions are\naccess-restricted, and zonal or service access in others is gated behind a\nquota request. Those are ordinary, successful support requests, not dead\nends. Reporting \"unavailable\" where the honest answer is \"available on\nrequest, allow lead time\" would send customers to a worse region for no\nreason.",
+      "enum": [
+        "none",
+        "region-access-request",
+        "zonal-access-request",
+        "quota-increase",
+        "unknown"
+      ],
+      "title": "RemediationKind",
+      "type": "string"
     },
     "Risk": {
       "additionalProperties": false,

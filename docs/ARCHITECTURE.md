@@ -407,6 +407,50 @@ And when nothing fits, the record carries **relaxations** rather than an error:
 else fits in germanywestcentral."* That is what flow criticality buys, and it is
 the difference between advice and an error message.
 
+### Not every elimination is final
+
+Azure region and zonal access are **not open by default**. A number of regions
+are access-restricted, and zonal or service access in others — database services
+notably — is gated behind a quota request. These are ordinary, routinely granted
+support requests, not dead ends.
+
+That makes "unavailable" the wrong word for a large class of results, and the
+error is expensive in the direction that matters: a customer told a region is
+unavailable will settle for a worse one rather than raise a ticket that would
+have succeeded.
+
+So an `Elimination` can carry a **`Remediation`** — the concrete action that
+would lift it, with the documented process attached:
+
+| Kind | Meaning |
+|---|---|
+| `region-access-request` | Reserved/restricted region; access requestable via support |
+| `zonal-access-request` | Region reachable but zonal deployment not enabled |
+| `quota-increase` | Available, but current quota is insufficient |
+| `none` | Genuinely unavailable; nothing to request |
+| `unknown` | May be requestable; not established |
+
+For restricted regions the process is a support request with issue type *Service
+and subscription Limit (quotas)* and quota type *Other Requests*, describing the
+region, deployment model and planned quota — see the [region access request
+process](https://learn.microsoft.com/en-us/troubleshoot/azure/general/region-access-request-process).
+The record carries that text so the reader can act on it without a second search.
+
+**Remediation and relaxation are different things**, and the record keeps them
+apart. A *remediation* changes the customer's Azure entitlements and leaves the
+design intact — request the region, raise the quota. A *relaxation* changes the
+requirements — split a low-criticality flow, drop an optional capability. One is
+a ticket; the other is a design concession, and the customer should be offered
+the ticket first.
+
+This also settles where the signal comes from, and it falls out of the two-plane
+split cleanly. The **world snapshot** records what exists. The **tenant context**
+records what this subscription can reach — the Postgres capabilities API's
+`restricted` flag, `Microsoft.Compute/skus` restrictions, quota headroom. The gap
+between the two *is* the remediation: something that exists but is not yet
+reachable is a request, not an absence. That is precisely why subscription-scoped
+fields are kept out of the world snapshot rather than merged into it.
+
 ---
 
 ## Decisions taken

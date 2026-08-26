@@ -84,3 +84,91 @@ def test_unknown_flow_component_rejected():
                 "flows": [{"name": "f", "path": ["app", "ghost"], "criticality": "high"}],
             }
         )
+
+
+# --------------------------------------------------------------------------
+# Eliminations that a support request could lift
+# --------------------------------------------------------------------------
+
+
+def _elimination(**kwargs):
+    from placement.contracts.decision import Elimination, EliminationStage
+
+    defaults = {
+        "region": "germanynorth",
+        "stage": EliminationStage.SERVICE_AVAILABILITY,
+        "rule": "service-availability",
+        "reason": "not available",
+    }
+    return Elimination(**{**defaults, **kwargs})
+
+
+def test_elimination_without_remediation_is_final():
+    assert _elimination().is_final
+
+
+def test_restricted_region_elimination_is_not_final():
+    """Region access is not open by default. A region ruled out only because
+    access has not been requested must not read the same as one ruled out on
+    residency - a customer told 'unavailable' will settle for a worse region
+    rather than raise a ticket that would have succeeded."""
+    from placement.contracts.decision import (
+        REGION_ACCESS_PROCESS,
+        REGION_ACCESS_REFERENCE,
+        Remediation,
+        RemediationKind,
+    )
+
+    elimination = _elimination(
+        remediation=Remediation(
+            kind=RemediationKind.REGION_ACCESS_REQUEST,
+            detail="germanynorth is an access-restricted region",
+            process=REGION_ACCESS_PROCESS,
+            reference=REGION_ACCESS_REFERENCE,
+        )
+    )
+    assert not elimination.is_final
+    assert "Other Requests" in elimination.remediation.process
+    assert elimination.remediation.reference.startswith("https://learn.microsoft.com")
+
+
+def test_remediation_kind_none_still_counts_as_final():
+    from placement.contracts.decision import Remediation, RemediationKind
+
+    elimination = _elimination(
+        remediation=Remediation(kind=RemediationKind.NONE, detail="service does not exist there")
+    )
+    assert elimination.is_final
+
+
+def test_record_separates_actionable_from_blocked():
+    from datetime import datetime, timezone
+
+    from placement.contracts.decision import (
+        DecisionRecord,
+        EliminationStage,
+        Remediation,
+        RemediationKind,
+        SnapshotRef,
+        TenantRef,
+    )
+
+    record = DecisionRecord(
+        workload="w",
+        generated_at=datetime(2026, 8, 26, tzinfo=timezone.utc),
+        engine_version="0.0.1",
+        snapshot=SnapshotRef(version="2026-08-26"),
+        tenant=TenantRef(mode="none"),
+        requirements_digest="sha256:abc",
+        eliminations=[
+            _elimination(region="eastus", stage=EliminationStage.RESIDENCY, reason="outside eu"),
+            _elimination(
+                region="germanynorth",
+                remediation=Remediation(
+                    kind=RemediationKind.ZONAL_ACCESS_REQUEST, detail="zonal access not enabled"
+                ),
+            ),
+        ],
+    )
+    assert [e.region for e in record.actionable_eliminations()] == ["germanynorth"]
+    assert record.blocked_regions() == {"eastus"}

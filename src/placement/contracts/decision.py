@@ -75,8 +75,66 @@ class EliminationStage(str, Enum):
     POLICY = "landing-zone-policy"
 
 
+class RemediationKind(str, Enum):
+    """Whether an elimination can be lifted, and by what action.
+
+    Central to the engine being useful rather than merely correct. Azure region
+    and zonal access are **not open by default** — a number of regions are
+    access-restricted, and zonal or service access in others is gated behind a
+    quota request. Those are ordinary, successful support requests, not dead
+    ends. Reporting "unavailable" where the honest answer is "available on
+    request, allow lead time" would send customers to a worse region for no
+    reason.
+    """
+
+    NONE = "none"                                # genuinely unavailable; nothing to request
+    REGION_ACCESS_REQUEST = "region-access-request"
+    ZONAL_ACCESS_REQUEST = "zonal-access-request"
+    QUOTA_INCREASE = "quota-increase"
+    UNKNOWN = "unknown"                          # may be requestable; not established
+
+
+#: The documented process for reserved/restricted-access regions.
+REGION_ACCESS_PROCESS = (
+    "Azure portal > Help + support > New support request. Issue type: 'Service and subscription "
+    "Limit (quotas)'; Quota type: 'Other Requests'. In the description, state: 'Request access for "
+    "the Azure <region> Regions for <organisation>', with the intended deployment model and "
+    "planned compute, storage and SQL quota. Multiple subscription IDs can be included in one "
+    "request."
+)
+REGION_ACCESS_REFERENCE = (
+    "https://learn.microsoft.com/en-us/troubleshoot/azure/general/region-access-request-process"
+)
+
+
+class Remediation(Record):
+    """A concrete action that would lift an elimination.
+
+    Distinct from `Relaxation`, and the difference matters to whoever reads the
+    record. A **remediation** changes the customer's Azure entitlements and
+    leaves the design intact — request access to the region, raise the quota. A
+    **relaxation** changes the requirements themselves — split a flow, drop a
+    capability. One is a ticket; the other is a design concession.
+    """
+
+    kind: RemediationKind
+    detail: str = Field(description="What specifically is gated.")
+    process: str | None = Field(default=None, description="How to request it.")
+    reference: str | None = Field(default=None, description="Documentation URL for the process.")
+    lead_time: str | None = Field(
+        default=None,
+        description="Rough turnaround, when known. Requests are reviewed by engineering, so this "
+        "is planning information, not a guarantee.",
+    )
+
+
 class Elimination(Record):
-    """Why a region never reached scoring."""
+    """Why a region never reached scoring.
+
+    An elimination carrying a `remediation` is **provisional**: the region is out
+    today, but the customer can act to bring it back. Consumers must not present
+    those identically to permanent ones.
+    """
 
     region: str
     stage: EliminationStage
@@ -84,7 +142,14 @@ class Elimination(Record):
     component: str | None = None
     flow: str | None = None
     reason: str
+    remediation: Remediation | None = Field(
+        default=None, description="Set when the elimination is liftable by a request."
+    )
     evidence: list[Evidence] = Field(default_factory=list)
+
+    @property
+    def is_final(self) -> bool:
+        return self.remediation is None or self.remediation.kind is RemediationKind.NONE
 
 
 # --------------------------------------------------------------------------
@@ -298,3 +363,18 @@ class DecisionRecord(Record):
     def eliminations_for(self, region: str) -> list[Elimination]:
         """Answers the question customers actually ask: 'why not this region?'"""
         return [e for e in self.eliminations if e.region == region]
+
+    def actionable_eliminations(self) -> list[Elimination]:
+        """Eliminations the customer could lift by raising a request.
+
+        Often the most valuable part of the record. A region ruled out only
+        because access has not been requested is a very different answer from one
+        ruled out on residency, and a customer who is told "unavailable" will
+        settle for a worse region rather than raise a ticket that would have
+        succeeded.
+        """
+        return [e for e in self.eliminations if not e.is_final]
+
+    def blocked_regions(self) -> set[str]:
+        """Regions with at least one elimination that no request can lift."""
+        return {e.region for e in self.eliminations if e.is_final}
