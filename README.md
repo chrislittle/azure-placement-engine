@@ -30,10 +30,10 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design and
 
 Early. Contracts and acceptance scenarios are in place; the engine is not built yet.
 
-- [x] Requirements contract (`src/placement/contracts/requirements.py`)
+- [x] Requirements contract, structured around WAF flows (`src/placement/contracts/requirements.py`)
 - [x] Decision-record contract (`src/placement/contracts/decision.py`)
 - [x] Four acceptance scenarios (`scenarios/`)
-- [ ] World snapshot model + ingesters
+- [ ] World snapshot model + ingesters (region metadata first)
 - [ ] Tenant context collectors (offline / live)
 - [ ] Constraint solver
 - [ ] Scoring + topology composition

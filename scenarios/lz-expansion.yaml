@@ -1,6 +1,7 @@
 # Scenario 4 — landing-zone expansion.
 # Stresses: tenant context as a first-class input, allowedLocations policy as a
-# hard whitelist, existing-footprint operational fit, network anchors, geo-pairing.
+# hard whitelist, and the real cost of standing up platform footprint in a new
+# region (hub, gateways, DNS, identity, workspace placement).
 apiVersion: placement/v0
 workload: emea-expansion
 owner: platform-ccoe
@@ -11,8 +12,9 @@ description: >
 residency:
   cloud: public
   jurisdictions: [eu]
-  # Populated from the customer's allowedLocations policy assignment by the
-  # tenant collector; listed inline here so the scenario runs without a tenant file.
+  # Normally populated by the tenant collector from the customer's
+  # allowedLocations policy assignment; inline here so the scenario runs
+  # without a tenant context file.
   allowed_regions:
     - westeurope
     - northeurope
@@ -25,6 +27,8 @@ residency:
     - switzerlandnorth
     - norwayeast
 
+horizon: 36mo
+
 demand:
   - geography: eu-west
     share: 0.6
@@ -35,28 +39,39 @@ demand:
 
 components:
   - name: app
-    kind: container-platform
-    features: [availability-zones, private-cluster]
+    service: Microsoft.ContainerService/managedClusters
+    capabilities: [availability-zones, private-cluster]
     capacity:
       capability_class: general
       vcpu: 96
       instances: 12
+      growth: 2x/24mo
   - name: db
-    kind: relational-transactional
-    features: [zone-redundant-ha, geo-replication]
+    service: Microsoft.DBforPostgreSQL/flexibleServers
+    capabilities: [zone-redundant-ha, geo-replication]
   - name: files
-    kind: object-storage
-    features: [zone-redundant-storage, geo-redundant-storage]
+    service: Microsoft.Storage/storageAccounts
+    capabilities: [zone-redundant-storage, geo-redundant-storage]
 
-affinity:
-  - components: [app, db]
-    rule: same-region
+flows:
+  - name: app-transaction
+    type: user
+    criticality: high
+    path: [app, db]
+    latency_sensitivity: high
+    rto: 1h
+    rpo: 5m
+    splittable: false
+
+  - name: file-access
+    type: system
+    criticality: medium
+    path: [app, files]
+    latency_sensitivity: medium
+    rto: 4h
+    rpo: 1h
 
 resiliency:
-  topology: active-passive
-  rto: 1h
-  rpo: 5m
-  geo_pair_required: true
   min_availability_zones: 3
 
 landingZone:
@@ -66,9 +81,8 @@ landingZone:
     - vwan-hub:westeurope
 
 priorities:
-  operational_fit: 0.30
-  resiliency: 0.25
-  latency: 0.20
-  cost: 0.15
+  landing_zone_expansion: 0.35
+  latency: 0.25
+  cost: 0.20
+  region_category: 0.15
   capacity_confidence: 0.05
-  sustainability: 0.05

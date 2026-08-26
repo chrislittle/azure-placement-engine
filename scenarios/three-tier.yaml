@@ -1,18 +1,20 @@
 # Scenario 3 — standard multi-service application.
-# Stresses: multi-service co-location, feature-granular availability across many
-# services at once, geo-pairing, and split global demand.
+# Stresses: many services at once, split global demand, and flows of genuinely
+# different criticality — the engine should be willing to split the low-value
+# search flow to keep checkout together.
 apiVersion: placement/v0
 workload: storefront
 owner: commerce-web
 description: >
   Global e-commerce front end. No single region satisfies both demand centres,
-  so the interesting output is an active-active topology, not a winner.
+  so the interesting output is a topology, not a winner.
 
 residency:
   cloud: public
 
-compliance:
-  scope: [pci-dss]
+compliance: [pci-dss]
+
+horizon: 24mo
 
 demand:
   - geography: us-east
@@ -27,47 +29,78 @@ demand:
 
 components:
   - name: web
-    kind: container-platform
-    features: [availability-zones, private-cluster]
+    service: Microsoft.ContainerService/managedClusters
+    capabilities: [availability-zones, private-cluster]
     capacity:
       capability_class: general
       vcpu: 128
       instances: 16
+      growth: 1.5x/12mo
   - name: orders-db
-    kind: relational-transactional
+    service: Microsoft.DBforPostgreSQL/flexibleServers
     classification: confidential
-    features: [zone-redundant-ha, read-replicas, customer-managed-key]
+    capabilities: [zone-redundant-ha, read-replicas, customer-managed-key]
   - name: catalog
-    kind: document-store
-    features: [multi-region-write, availability-zones]
+    service: Microsoft.DocumentDB/databaseAccounts
+    capabilities: [multi-region-write, availability-zones]
   - name: sessions
-    kind: cache
-    features: [zone-redundant]
+    service: Microsoft.Cache/Redis
+    capabilities: [zone-redundant]
   - name: assets
-    kind: object-storage
-    features: [zone-redundant-storage]
+    service: Microsoft.Storage/storageAccounts
+    capabilities: [zone-redundant-storage]
   - name: search
-    kind: search
+    service: Microsoft.Search/searchServices
     required: false
   - name: events
-    kind: event-stream
-    features: [availability-zones]
+    service: Microsoft.EventHub/namespaces
+    capabilities: [availability-zones]
 
-affinity:
-  - components: [web, orders-db, sessions]
-    rule: same-region
-    reason: Session affinity and transactional latency.
+flows:
+  - name: checkout
+    type: user
+    criticality: high
+    path: [web, sessions, orders-db]
+    latency_sensitivity: high
+    rto: 5m
+    rpo: 1m
+    compliance: [pci-dss]
+    classification: confidential
+    splittable: false
+    data_volume_gb_month: 800
+
+  - name: browse-catalog
+    type: user
+    criticality: high
+    path: [web, catalog, assets]
+    latency_sensitivity: high
+    rto: 15m
+    rpo: 5m
+    data_volume_gb_month: 12000
+
+  - name: product-search
+    type: user
+    criticality: low
+    path: [web, search]
+    latency_sensitivity: medium
+    rto: 24h
+    rpo: 24h
+    data_volume_gb_month: 200
+
+  - name: order-events
+    type: system
+    criticality: medium
+    path: [orders-db, events]
+    latency_sensitivity: low
+    rto: 1h
+    rpo: 15m
 
 resiliency:
-  topology: active-active
-  rto: 5m
-  rpo: 1m
   min_availability_zones: 3
 
 priorities:
-  latency: 0.30
-  cost: 0.20
-  resiliency: 0.20
+  latency: 0.35
+  cost: 0.25
   capacity_confidence: 0.15
-  operational_fit: 0.10
-  sustainability: 0.05
+  landing_zone_expansion: 0.15
+  region_category: 0.10

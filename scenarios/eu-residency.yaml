@@ -1,7 +1,7 @@
 # Scenario 2 — data-residency-driven placement.
-# Stresses: hard residency/compliance filters, EU Data Boundary, feature-level
-# encryption requirements, and the case where the constraint envelope — not the
-# scoring — determines the answer.
+# Stresses: residency and compliance hard filters, capability-level encryption
+# requirements, and two flows in one workload with very different recovery
+# targets — the audit path should not be made to pay for the clinical path's RTO.
 apiVersion: placement/v0
 workload: patient-records
 owner: health-data-platform
@@ -14,8 +14,9 @@ residency:
   jurisdictions: [de]
   boundaries: [eu-data-boundary]
 
-compliance:
-  scope: [iso-27001, iso-27018, gdpr, c5]
+compliance: [iso-27001, gdpr]
+
+horizon: 36mo
 
 demand:
   - geography: eu-central
@@ -24,39 +25,52 @@ demand:
     latency_budget_hard_ms: 60
 
 components:
-  - name: records-db
-    kind: relational-transactional
-    classification: restricted
-    features: [zone-redundant-ha, customer-managed-key, private-link, geo-backup]
   - name: api
-    kind: container-platform
+    service: Microsoft.ContainerService/managedClusters
     classification: restricted
-    features: [availability-zones, private-cluster, confidential-nodes]
+    capabilities: [availability-zones, private-cluster, confidential-nodes]
     capacity:
       capability_class: confidential
       vcpu: 64
       instances: 8
-  - name: audit-log
-    kind: object-storage
+  - name: records-db
+    service: Microsoft.DBforPostgreSQL/flexibleServers
     classification: restricted
-    features: [immutable-storage, customer-managed-key]
+    capabilities: [zone-redundant-ha, customer-managed-key, private-link, geo-backup]
+  - name: audit-log
+    service: Microsoft.Storage/storageAccounts
+    classification: restricted
+    capabilities: [immutable-storage, customer-managed-key]
 
-affinity:
-  - components: [records-db, api, audit-log]
-    rule: same-region
-    reason: In-country requirement applies to every component holding patient data.
+flows:
+  - name: patient-lookup
+    type: user
+    criticality: high
+    path: [api, records-db]
+    latency_sensitivity: high
+    rto: 4h
+    rpo: 15m
+    compliance: [iso-27018, c5]
+    classification: restricted
+    splittable: false          # in-country requirement applies to the whole clinical path
+
+  - name: audit-write
+    type: system
+    criticality: medium
+    path: [api, audit-log]
+    latency_sensitivity: low
+    rto: 24h
+    rpo: 1h
+    classification: restricted
 
 resiliency:
-  topology: active-passive
-  rto: 4h
-  rpo: 15m
-  geo_pair_required: true
   min_availability_zones: 3
+  # require_paired_region deliberately unset — CAF no longer treats pairing as
+  # mandatory, so the engine chooses the secondary on latency and compliance.
 
 priorities:
-  resiliency: 0.35
-  latency: 0.25
-  operational_fit: 0.15
+  latency: 0.30
+  landing_zone_expansion: 0.20
+  region_category: 0.20
+  cost: 0.20
   capacity_confidence: 0.10
-  cost: 0.10
-  sustainability: 0.05

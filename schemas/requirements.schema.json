@@ -2,52 +2,31 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Requirements",
   "$defs": {
-    "Affinity": {
-      "additionalProperties": false,
-      "properties": {
-        "components": {
-          "items": {
-            "type": "string"
-          },
-          "minItems": 2,
-          "title": "Components",
-          "type": "array"
-        },
-        "rule": {
-          "$ref": "#/$defs/AffinityRule"
-        },
-        "reason": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Reason"
-        }
-      },
-      "required": [
-        "components",
-        "rule"
-      ],
-      "title": "Affinity",
-      "type": "object"
-    },
-    "AffinityRule": {
+    "Archetype": {
+      "description": "Optional 'help me choose' path.\n\nThe primary way to name a component is its ARM resource type \u2014 that's what\npeople already know and it's unambiguous. An archetype is only for the case\nwhere the service genuinely hasn't been chosen yet and the engine should\npick (e.g. Postgres Flexible Server vs Azure SQL DB vs SQL MI).",
       "enum": [
-        "same-region",
-        "same-geography",
-        "separate-region",
-        "separate-geography"
+        "container-platform",
+        "serverless-compute",
+        "virtual-machines",
+        "batch-compute",
+        "ai-training",
+        "ai-inference",
+        "relational-transactional",
+        "document-store",
+        "cache",
+        "object-storage",
+        "event-stream",
+        "message-queue",
+        "search",
+        "analytics",
+        "cdn-edge",
+        "secrets"
       ],
-      "title": "AffinityRule",
+      "title": "Archetype",
       "type": "string"
     },
     "CapabilityClass": {
-      "description": "Capability classes from the thesis, used here as a coarse pre-filter over\nreal VM families. Narrower needs go in `sku_hints`, which the engine treats\nas a hard constraint that shrinks the qualifying pool.",
+      "description": "Coarse compute classes, used as a pre-filter over real VM families.\nNarrower needs go in `sku_hints`, which shrinks the qualifying pool.",
       "enum": [
         "general",
         "compute-intensive",
@@ -61,14 +40,14 @@
     },
     "CapacityRequest": {
       "additionalProperties": false,
-      "description": "Declared demand for compute. `capability_class` is the abstract ask;\n`sku_hints` narrows it when the workload genuinely cares about silicon.",
+      "description": "Declared compute demand.\n\nDeliberately absent: any notion of reservation or savings-plan lock-in.\nAzure savings plans apply across regions and families, so commitment is\neffectively placement-neutral and doesn't belong in a placement decision.",
       "properties": {
         "capability_class": {
           "$ref": "#/$defs/CapabilityClass",
           "default": "general"
         },
         "sku_hints": {
-          "description": "Concrete VM SKUs, e.g. ['Standard_ND96isr_H100_v5']. Narrowing here shrinks the qualifying pool and lowers capacity confidence \u2014 specificity is priced.",
+          "description": "Concrete VM SKUs, e.g. ['Standard_ND96isr_H100_v5']. Narrowing here shrinks the qualifying pool and lowers capacity confidence.",
           "items": {
             "type": "string"
           },
@@ -121,7 +100,6 @@
             }
           ],
           "default": null,
-          "description": "Total GPU/accelerator count required.",
           "title": "Accelerators"
         },
         "interconnect": {
@@ -134,8 +112,21 @@
             }
           ],
           "default": null,
-          "description": "Accelerator fabric requirement, e.g. 'infiniband', 'nvlink-domain>=8'.",
+          "description": "Accelerator fabric requirement, e.g. 'infiniband'.",
           "title": "Interconnect"
+        },
+        "growth": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Expected growth over the workload's horizon, e.g. '3x/12mo'. Scored against projected demand, not just current.",
+          "title": "Growth"
         },
         "spot_tolerant": {
           "default": false,
@@ -155,39 +146,13 @@
       "title": "Cloud",
       "type": "string"
     },
-    "Compliance": {
-      "additionalProperties": false,
-      "properties": {
-        "scope": {
-          "description": "Certification/regulation scope, e.g. ['pci-dss', 'iso-27001', 'hipaa', 'dora'].",
-          "items": {
-            "type": "string"
-          },
-          "title": "Scope",
-          "type": "array"
-        }
-      },
-      "title": "Compliance",
-      "type": "object"
-    },
     "Component": {
       "additionalProperties": false,
-      "description": "One piece of the workload. Placement is solved for the component set as a\nwhole, because affinity rules couple them.",
+      "description": "One deployable piece of the workload.\n\nNamed by ARM resource type wherever the service is already chosen \u2014 that is\nthe primary path. `archetype` is the optional alternative for when it isn't.",
       "properties": {
         "name": {
           "title": "Name",
           "type": "string"
-        },
-        "kind": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ComponentKind"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "service": {
           "anyOf": [
@@ -199,15 +164,27 @@
             }
           ],
           "default": null,
-          "description": "Optional pin to a concrete Azure resource type, e.g. 'Microsoft.ContainerService/managedClusters'. When set, `kind` is advisory.",
+          "description": "ARM resource type, e.g. 'Microsoft.DBforPostgreSQL/flexibleServers'. Preferred.",
           "title": "Service"
         },
-        "features": {
-          "description": "Feature-level requirements \u2014 the granularity that actually breaks deployments, e.g. ['availability-zones', 'zone-redundant-ha', 'customer-managed-key', 'private-link'].",
+        "archetype": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Archetype"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Used only when the concrete service hasn't been chosen yet."
+        },
+        "capabilities": {
+          "description": "Per-region service capabilities this component needs \u2014 the level below 'is the service in the region', e.g. ['zone-redundant-ha', 'customer-managed-key']. Named after Azure's own `locations/{location}/capabilities` APIs, which is where most of these facts come from.",
           "items": {
             "type": "string"
           },
-          "title": "Features",
+          "title": "Capabilities",
           "type": "array"
         },
         "classification": {
@@ -225,9 +202,33 @@
           ],
           "default": null
         },
+        "residency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Residency"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Override. Intersected with the workload and flow envelopes."
+        },
+        "topology": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Topology"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Override for a standing mandate. Normally the engine derives this from the RTO/RPO of the flows this component serves."
+        },
         "required": {
           "default": true,
-          "description": "False marks the component as droppable if it alone blocks an otherwise good region.",
+          "description": "False marks the component as droppable if it alone blocks a region.",
           "title": "Required",
           "type": "boolean"
         }
@@ -238,26 +239,14 @@
       "title": "Component",
       "type": "object"
     },
-    "ComponentKind": {
-      "description": "Outcome archetypes. The resolver maps these to concrete Azure services; a\ncomponent may instead pin `service` directly when the choice is already made.",
+    "Criticality": {
+      "description": "WAF RE:02 flow criticality rating. Drives what the engine sacrifices when\nthe constraints can't all be met.",
       "enum": [
-        "container-platform",
-        "serverless-compute",
-        "virtual-machines",
-        "batch-compute",
-        "ai-training",
-        "ai-inference",
-        "relational-transactional",
-        "document-store",
-        "cache",
-        "object-storage",
-        "event-stream",
-        "message-queue",
-        "search",
-        "cdn-edge",
-        "secrets"
+        "high",
+        "medium",
+        "low"
       ],
-      "title": "ComponentKind",
+      "title": "Criticality",
       "type": "string"
     },
     "DataClassification": {
@@ -272,10 +261,10 @@
     },
     "DemandSource": {
       "additionalProperties": false,
-      "description": "Where the users are. Drives latency scoring; only a hard filter when\n`latency_budget_hard_ms` is set.",
+      "description": "Where the users are. CAF's second region-selection step is proximity to\nusers; this is the input for it.",
       "properties": {
         "geography": {
-          "description": "Demand origin key, e.g. 'eu-west', 'us-east', 'apac-southeast'.",
+          "description": "Demand origin key, e.g. 'eu-west', 'us-east'.",
           "title": "Geography",
           "type": "string"
         },
@@ -296,7 +285,7 @@
             }
           ],
           "default": null,
-          "description": "Target p99 network latency from this origin. Scored, not enforced.",
+          "description": "Target p99 round-trip from this origin. Scored, not enforced.",
           "title": "Latency P99 Ms"
         },
         "latency_budget_hard_ms": {
@@ -309,7 +298,7 @@
             }
           ],
           "default": null,
-          "description": "Absolute ceiling. Regions exceeding it are eliminated, not merely penalised.",
+          "description": "Absolute ceiling. Regions above it are eliminated.",
           "title": "Latency Budget Hard Ms"
         }
       },
@@ -320,9 +309,139 @@
       "title": "DemandSource",
       "type": "object"
     },
+    "Flow": {
+      "additionalProperties": false,
+      "description": "A WAF flow: a sequence of actions across components that performs a\nfunction, carrying its own criticality, recovery targets, and constraints.\n\nThis is where resiliency and latency requirements actually live, because\nthat is where the business states them \u2014 a checkout flow and a nightly\nreporting flow in the same workload have genuinely different RTOs.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/FlowType",
+          "default": "system"
+        },
+        "criticality": {
+          "$ref": "#/$defs/Criticality",
+          "default": "medium"
+        },
+        "path": {
+          "description": "Component names, in order. A user flow starts at its entry point.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Path",
+          "type": "array"
+        },
+        "latency_sensitivity": {
+          "$ref": "#/$defs/Sensitivity",
+          "default": "medium"
+        },
+        "rto": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Recovery time objective, e.g. '5m', '24h'.",
+          "title": "Rto"
+        },
+        "rpo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Recovery point objective, e.g. '1m', '24h'.",
+          "title": "Rpo"
+        },
+        "compliance": {
+          "description": "Compliance scope carried by this flow, e.g. ['pci-dss']. Inherited by its path.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Compliance",
+          "type": "array"
+        },
+        "residency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Residency"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Residency envelope carried by this flow. Inherited by its path."
+        },
+        "classification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DataClassification"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "origins": {
+          "description": "For user flows: which demand origins drive it, by `demand[].geography`. Empty means all of them.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Origins",
+          "type": "array"
+        },
+        "data_volume_gb_month": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Approximate data moved along this path per month. Used to price the egress penalty when a flow has to be split across regions.",
+          "title": "Data Volume Gb Month"
+        },
+        "splittable": {
+          "default": true,
+          "description": "False forbids the engine from placing this flow's components in different regions, whatever the latency maths says.",
+          "title": "Splittable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "path"
+      ],
+      "title": "Flow",
+      "type": "object"
+    },
+    "FlowType": {
+      "description": "WAF distinguishes the two; they score differently.\n\nA user flow's latency is measured from a demand origin; a system flow's is\nmeasured between components.",
+      "enum": [
+        "user",
+        "system"
+      ],
+      "title": "FlowType",
+      "type": "string"
+    },
     "LandingZone": {
       "additionalProperties": false,
-      "description": "The customer's existing reality. Normally sourced from a tenant context\nfile or a live ARM read; the inline fields let a caller work without one.",
+      "description": "The customer's existing estate. CAF's landing-zone region guidance treats\nadding a region as real work \u2014 a new hub or vWAN hub in the Connectivity\nsubscription, gateways, DNS forwarders, identity expansion, workspace\nplacement. That cost is scored, not assumed away.",
       "properties": {
         "context": {
           "anyOf": [
@@ -334,11 +453,10 @@
             }
           ],
           "default": null,
-          "description": "Path to a tenant context JSON, or the literal 'live' to collect from ARM.",
+          "description": "Path to a tenant context JSON, or 'live' to collect from ARM.",
           "title": "Context"
         },
         "existing_regions": {
-          "description": "Regions the customer already operates in. Scored as operational fit.",
           "items": {
             "type": "string"
           },
@@ -371,42 +489,41 @@
     },
     "Priorities": {
       "additionalProperties": false,
-      "description": "Weights for the scoring pass. Normalised before use, so relative magnitude\nis what matters, not the sum.",
+      "description": "Weights for ranking the regions that survive the hard filters.\n\nEach maps to a criterion CAF names in 'Select Azure regions'. CAF prescribes\nthe criteria and their sequence but not a ranking method, so the weighting\nis ours \u2014 and the decision record says so rather than implying Microsoft\nprescribed it.\n\nSustainability is deliberately absent: it appears nowhere in CAF's region\nguidance.",
       "properties": {
         "latency": {
-          "default": 0.25,
+          "default": 0.3,
+          "description": "CAF: choose regions close to your users.",
           "minimum": 0.0,
           "title": "Latency",
           "type": "number"
         },
         "cost": {
-          "default": 0.2,
+          "default": 0.25,
+          "description": "CAF: compare pricing.",
           "minimum": 0.0,
           "title": "Cost",
           "type": "number"
         },
         "capacity_confidence": {
-          "default": 0.25,
+          "default": 0.2,
+          "description": "CAF: plan for capacity constraints. Proven restrictions eliminate a region outright; this weight covers the inferred signals.",
           "minimum": 0.0,
           "title": "Capacity Confidence",
           "type": "number"
         },
-        "resiliency": {
-          "default": 0.15,
-          "minimum": 0.0,
-          "title": "Resiliency",
-          "type": "number"
-        },
-        "operational_fit": {
+        "region_category": {
           "default": 0.1,
+          "description": "Azure's own Recommended vs Alternate classification \u2014 broadest service coverage and AZ support.",
           "minimum": 0.0,
-          "title": "Operational Fit",
+          "title": "Region Category",
           "type": "number"
         },
-        "sustainability": {
-          "default": 0.05,
+        "landing_zone_expansion": {
+          "default": 0.15,
+          "description": "Cost of standing up platform footprint in a new region.",
           "minimum": 0.0,
-          "title": "Sustainability",
+          "title": "Landing Zone Expansion",
           "type": "number"
         }
       },
@@ -415,14 +532,14 @@
     },
     "Residency": {
       "additionalProperties": false,
-      "description": "Hard containment rules. Evaluated before anything is scored.",
+      "description": "Hard containment rules. Declarable at three levels \u2014 workload (the\ndefault), flow (inherited by every component on the path), and component\n(an explicit override). The engine resolves a component's effective envelope\nas the intersection of all three.",
       "properties": {
         "cloud": {
           "$ref": "#/$defs/Cloud",
           "default": "public"
         },
         "jurisdictions": {
-          "description": "Jurisdiction codes the workload must stay inside, e.g. ['eu'], ['us'], ['de'].",
+          "description": "Jurisdiction codes the data must stay inside, e.g. ['eu'], ['de'].",
           "items": {
             "type": "string"
           },
@@ -438,7 +555,7 @@
           "type": "array"
         },
         "allowed_regions": {
-          "description": "Explicit whitelist. When set, nothing outside it is ever a candidate. Usually populated from the landing zone's allowedLocations policy rather than by hand.",
+          "description": "Explicit whitelist \u2014 nothing outside it is ever a candidate. Usually populated from the landing zone's allowedLocations policy assignment rather than by hand.",
           "items": {
             "type": "string"
           },
@@ -456,64 +573,58 @@
       "title": "Residency",
       "type": "object"
     },
-    "Resiliency": {
+    "ResiliencyConstraints": {
       "additionalProperties": false,
+      "description": "Constraints on *how* the engine may satisfy flow recovery targets.\n\nNote this holds no topology field \u2014 topology is derived per component from\nflow RTO/RPO. What lives here is the boundary the engine must work inside.",
       "properties": {
-        "topology": {
-          "$ref": "#/$defs/ResiliencyTopology",
-          "default": "zonal"
-        },
-        "rto": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Recovery time objective, e.g. '15m', '4h'.",
-          "title": "Rto"
-        },
-        "rpo": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Recovery point objective, e.g. '5m', '0'.",
-          "title": "Rpo"
-        },
-        "geo_pair_required": {
-          "default": false,
-          "description": "Require the secondary to be the Azure-designated paired region \u2014 sequential platform updates, paired-region recovery priority, and some service replication depend on it.",
-          "title": "Geo Pair Required",
-          "type": "boolean"
-        },
         "min_availability_zones": {
           "default": 0,
           "maximum": 3,
           "minimum": 0,
           "title": "Min Availability Zones",
           "type": "integer"
+        },
+        "require_paired_region": {
+          "default": false,
+          "description": "Force the secondary to be the Azure-designated paired region. Off by default: CAF now states that favouring paired regions is 'no longer mandatory' and that regions should be chosen on latency, compliance and resiliency needs. Set this only for a service that genuinely depends on pairing, or a standing customer mandate.",
+          "title": "Require Paired Region",
+          "type": "boolean"
+        },
+        "max_regions": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Cap on total regions, e.g. to bound operational surface.",
+          "title": "Max Regions"
         }
       },
-      "title": "Resiliency",
+      "title": "ResiliencyConstraints",
       "type": "object"
     },
-    "ResiliencyTopology": {
+    "Sensitivity": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "Topology": {
+      "description": "Normally an engine *output*, derived from flow RTO/RPO.\n\nAccepted as an input only as an override, for cases where a customer has a\nstanding mandate rather than a requirement.",
       "enum": [
         "single",
         "zonal",
         "active-passive",
         "active-active"
       ],
-      "title": "ResiliencyTopology",
+      "title": "Topology",
       "type": "string"
     }
   },
@@ -556,7 +667,12 @@
       "$ref": "#/$defs/Residency"
     },
     "compliance": {
-      "$ref": "#/$defs/Compliance"
+      "description": "Workload-wide compliance scope, e.g. ['iso-27001']. Flows may add their own.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Compliance",
+      "type": "array"
     },
     "demand": {
       "items": {
@@ -573,15 +689,29 @@
       "title": "Components",
       "type": "array"
     },
-    "affinity": {
+    "flows": {
+      "description": "WAF flow inventory. If empty, one implicit flow spanning every component is assumed \u2014 see `effective_flows()`.",
       "items": {
-        "$ref": "#/$defs/Affinity"
+        "$ref": "#/$defs/Flow"
       },
-      "title": "Affinity",
+      "title": "Flows",
       "type": "array"
     },
     "resiliency": {
-      "$ref": "#/$defs/Resiliency"
+      "$ref": "#/$defs/ResiliencyConstraints"
+    },
+    "horizon": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Planning window for capacity and cost, e.g. '24mo'. Without it the decision is point-in-time.",
+      "title": "Horizon"
     },
     "landingZone": {
       "$ref": "#/$defs/LandingZone"

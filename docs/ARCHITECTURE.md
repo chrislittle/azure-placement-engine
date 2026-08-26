@@ -1,6 +1,6 @@
 # Architecture
 
-**Status:** working draft — scoping settled, engine not yet built
+**Status:** working draft — contracts settled, engine not yet built
 **Related:** [`../../azure_next/VISION.md`](../../azure_next/VISION.md)
 
 ---
@@ -17,26 +17,77 @@ This engine is **that machinery, retrofitted onto today's regional Azure**. It
 takes a normalized statement of what a workload needs and returns a ranked,
 evidenced, reproducible region placement.
 
-Two structural consequences follow, and both are load-bearing:
-
 **The input is an ancestor of `outcome.yaml`.** Same vocabulary as the thesis,
 one abstraction level lower. Where the outcome file says `hub: eu`, the
-requirements file says `residency.jurisdictions: [eu]` — and the engine
-*outputs* `swedencentral` + `westeurope`. A requirements file can be
-mechanically derived from an outcome file, which gives the tool a migration path
-instead of a throwaway schema.
+requirements file says `residency.jurisdictions: [eu]` — and the engine *outputs*
+the concrete regions.
 
 **The output is the resolution record.** The thesis: *"on every release the
-platform writes back what it chose ... as a queryable record ... developers can
-read it; they never edit it."* That is precisely the decision record.
+platform writes back what it chose ... developers can read it; they never edit
+it."* That is precisely the decision record.
 
 ### What this is not
 
 An **advisory plane, not a control plane.** It decides and explains. It can
 *emit* enforcement artifacts — an Azure Policy `allowedLocations` assignment,
-deployment parameters, landing-zone configuration — but it does not own
-placement the way a Sovereign Hub would. We cannot change Azure fundamentally;
-we can remove the part of the job that should never have been the customer's.
+deployment parameters, landing-zone configuration — but it does not own placement
+the way a Sovereign Hub would. We cannot change Azure fundamentally; we can
+remove the part of the job that should never have been the customer's.
+
+---
+
+## Grounding: CAF for the criteria, WAF for the structure
+
+Neither of these was invented here, and that matters — a placement recommendation
+that cites Microsoft's own guidance is arguable on its merits, while one built on
+private criteria is just an opinion with a score attached.
+
+### CAF supplies the criteria
+
+[Select Azure regions](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-setup-guide/regions)
+prescribes four steps: check data residency and compliance → choose regions close
+to your users → validate region capabilities (service availability, pricing,
+availability zones, region pairs, **capacity constraints**) → consider multiple
+regions. Every hard filter and every weight in this engine maps to one of them.
+
+Two consequences worth recording, because both corrected earlier guesses:
+
+- **Sustainability is not a CAF criterion.** It appears nowhere in the region
+  guidance. It was cut.
+- **Region pairing is explicitly de-emphasized.** CAF now states that favouring
+  paired regions *"is no longer mandatory"* and that regions should be chosen on
+  latency, compliance and resiliency needs. So `require_paired_region` defaults
+  off and exists only for services that genuinely depend on pairing, or a standing
+  customer mandate.
+
+CAF is a **sequenced checklist, not a scoring model** — it never says how to rank
+the regions that survive. The weighting is therefore ours, and the decision record
+says so rather than implying Microsoft prescribed it.
+
+### WAF supplies the structure
+
+The requirements schema is built around **flows**, a defined Well-Architected
+concept: *"the sequence of actions that performs a specific function... the
+movement of data and the running of processes between components of the
+workload."* WAF already asks customers to inventory them, rate their criticality,
+and attach RTO/RPO to each —
+[RE:02](https://learn.microsoft.com/en-us/azure/well-architected/reliability/identify-flows)
+for reliability,
+[CO:09](https://learn.microsoft.com/en-us/azure/well-architected/cost-optimization/optimize-flow-costs)
+for cost, the latter listing a flow's attributes as latency sensitivity, data
+dependencies, security needs, and compliance requirements.
+
+Adopting flows resolved four separate design problems at once:
+
+| Problem | How flows solve it |
+|---|---|
+| Co-location | **Derived, not declared.** A latency-sensitive high-criticality flow wants its path together. |
+| Per-component topology | **Derived.** A component inherits the strictest RTO/RPO among the flows it serves — so a reporting store on a 24-hour flow never pays for active-passive. |
+| Per-component residency | **Inherited down the path.** A flow carrying regulated data imposes its envelope on every component it touches. |
+| Over-constrained inputs | **Criticality says what to sacrifice.** The engine returns priced relaxations instead of "infeasible". |
+
+Where a customer has no flow inventory, `effective_flows()` synthesises a single
+implicit flow over every component, so the fallback degrades gracefully.
 
 ---
 
@@ -46,76 +97,73 @@ we can remove the part of the job that should never have been the customer's.
 requirements.yaml
       │
       ▼
-[1] Normalize ──── validate, resolve defaults, digest the input
+[1] Normalize ──── validate, resolve flow inheritance, digest the input
       │
       ▼
-[2] Resolve ────── outcome archetypes → concrete Azure services + required features
+[2] Resolve ────── ARM resource types (+ archetypes where unchosen) → required capabilities
       │
       ├──◀── world snapshot   (pinned, versioned, public facts)
       ├──◀── tenant context   (live or offline, customer-specific facts)
       │
       ▼
-[3] Constrain ──── hard filters → candidate regions          ──▶ eliminations[]
+[3] Constrain ──── CAF hard filters → candidate regions       ──▶ eliminations[]
       │
       ▼
-[4] Compose ────── candidate regions → viable topologies (pairing, affinity, AZ)
+[4] Compose ────── derive per-component topology from flow RTO/RPO; build region sets
       │
       ▼
-[5] Score ──────── weighted multi-objective ranking          ──▶ subscores + evidence
+[5] Score ──────── weighted ranking of survivors               ──▶ subscores + evidence
       │
       ▼
-[6] Record ─────── DecisionRecord: winner, alternatives, eliminations, risks
+[6] Record ─────── winner, alternatives, eliminations, flow outcomes, risks, relaxations
       │
       ▼
 [7] Emit ───────── report · policy · IaC params · diff-vs-previous
 ```
 
-Stages 3–5 are strictly separated because they answer different questions and
-have different burdens of proof. A **hard constraint** must be defensible from a
-deterministic fact ("this service is not in this region"). A **score** is a
-judgement under a declared weighting, and is allowed to be arguable. Collapsing
-the two produces a tool nobody trusts, because a customer cannot tell whether
-their region lost on fact or on opinion.
+Stages 3–5 are strictly separated because they carry different burdens of proof.
+A **hard constraint** must be defensible from a deterministic fact ("this
+capability is not in this region"). A **score** is a judgement under a declared
+weighting, and is allowed to be arguable. Collapsing the two produces a tool
+nobody trusts, because a customer cannot tell whether their region lost on fact
+or on opinion.
 
 ---
 
 ## Two data planes
 
-They are separated because they differ in trust, freshness, and blast radius.
+Separated because they differ in trust, freshness, and blast radius.
 
 ### World snapshot — public, pinned, versioned
 
-The rubric. Ingested from real Azure sources, materialised as a versioned
-snapshot, and **pinned into every decision record**. Snapshots are committed to
-the repo: they are the reproducibility guarantee, not a cache.
+Ingested from real Azure sources, materialised as a versioned snapshot, and
+**pinned into every decision record**. Snapshots are committed: they are the
+reproducibility guarantee, not a cache.
 
 | Fact | Source | Signal quality |
 |---|---|---|
-| Regions, geography, paired region, region category | ARM `locations` API (`metadata.pairedRegion`, `geographyGroup`, `regionCategory`) | Deterministic |
+| Regions, geography, paired region, **region category** | ARM `locations` API (`metadata.pairedRegion`, `geographyGroup`, `regionCategory`) | Deterministic |
 | Availability-zone support & zone mappings | ARM `locations` API, `Microsoft.Compute/skus` | Deterministic |
-| Service availability by region | ARM provider metadata (`resourceTypes[].locations`); products-by-region as cross-check | Deterministic |
-| **Feature**-level availability | Per-service capability APIs (e.g. Postgres Flexible `locations/{loc}/capabilities`, AKS, Cosmos, Storage) | Deterministic, uneven coverage |
-| VM SKU availability & capabilities | `Microsoft.Compute/skus` (`locations`, `zones`, `capabilities`) | Deterministic |
+| Service availability by region | ARM provider metadata (`resourceTypes[].locations`) | Deterministic |
+| **Capability**-level availability | Per-RP capability APIs (e.g. `Microsoft.DBforPostgreSQL/locations/{loc}/capabilities`); ~80 `reliability-*` doc pages for the rest | Deterministic, **fragmented** |
+| VM SKU availability & capabilities | `Microsoft.Compute/skus` | Deterministic |
 | Retail pricing | Retail Prices API (public, unauthenticated) | Deterministic |
-| Inter-region & origin latency | Azure network round-trip latency statistics; optional client probing | Measured, monthly |
+| Inter-region & origin latency | [Azure network round-trip latency statistics](https://learn.microsoft.com/en-us/azure/networking/azure-network-latency) | Measured, monthly |
 | Residency boundaries, sovereign clouds | EU Data Boundary docs, cloud endpoint metadata | Curated |
-| Compliance certification scope | Trust Center / Service Trust Portal — **service-scoped, not only region-scoped** | Curated |
-| Carbon / grid intensity | Regional sustainability data | Curated, coarse |
+| Compliance certification scope | Trust Center — **service-scoped, not only region-scoped** | Curated |
 
 ### Tenant context — customer-specific
 
-The customer's actual reality. Two collection modes, same schema:
-
-- **Offline** (default) — a JSON export. Portable, no credentials, works in a
-  customer meeting, safe to review before use. Not committed (see `.gitignore`).
-- **Live** — a read-only ARM collector against the customer's tenant.
+Two collection modes, same schema. **Offline** (default) is a JSON export —
+portable, no credentials, works in a customer meeting, reviewable before use, and
+not committed. **Live** is a read-only ARM collector.
 
 | Fact | Source |
 |---|---|
 | `allowedLocations` policy assignments | Policy API — becomes a **hard whitelist** |
 | Existing footprint (regions, subscriptions, MGs) | Azure Resource Graph |
 | Quota limits and current usage | Quota API / usages |
-| Subscription-specific SKU restrictions | `Microsoft.Compute/skus` `restrictions[]` — `NotAvailableForSubscription` |
+| Subscription-specific SKU restrictions | `Microsoft.Compute/skus` `restrictions[]` |
 | Spot placement scores | `Microsoft.Compute/locations/{loc}/placementScores/spot` |
 | Network anchors (ER peering locations, vWAN hubs) | Resource Graph |
 
@@ -125,113 +173,135 @@ The customer's actual reality. Two collection modes, same schema:
 
 ### 1. Capacity is not queryable
 
-There is no Azure API that answers *"does swedencentral have room for 64 × ND96isr
-H100 v5?"* The available signals are indirect: SKU `restrictions` (which **is**
-subscription-specific and authoritative for exclusion), quota headroom, spot
-placement scores, and spot price/eviction behaviour as a proxy for pressure.
+CAF names capacity as a region-selection criterion but there is no Azure API that
+answers *"does swedencentral have room for 64 × ND96isr H100 v5?"* The available
+signals are indirect: SKU `restrictions` (subscription-specific and authoritative
+**for exclusion**), quota headroom, and spot placement scores.
 
-So capacity is modelled as a **confidence score with cited evidence and an
-explicit confidence below 1.0**, never as a boolean. This mirrors the thesis's
-honest GPU caveat: *"no architecture invents metal."* An engine that implies
-certainty it does not have is worse than no engine, because the first
-allocation failure destroys trust in every other output too.
+So capacity splits in two: a **hard elimination where we have proof** — a
+restriction on your subscription is a fact — and a **scored confidence with
+evidence below 1.0** everywhere else. It is never asserted as a boolean. This
+mirrors the thesis's honest GPU caveat: *"no architecture invents metal."* An
+engine that implies certainty it does not have is worse than no engine, because
+the first allocation failure destroys trust in every other output too.
 
-`Evidence.confidence` exists on every fact for exactly this reason: a
-deterministic fact carries 1.0, an inferred capacity signal does not, and the
-decision record shows the difference.
+`Evidence.confidence` exists for exactly this: deterministic facts carry 1.0,
+inferred capacity signals do not, and the record shows the difference.
 
-### 2. Granularity kills you
+### 2. Capability data is fragmented, not missing
 
-"Service X is available in region Y" is close to useless. Deployments break on
-*features*: zone-redundant HA, customer-managed keys, a specific tier, a specific
-GPU family, confidential nodes, preview scope. The data model is therefore
-feature-granular from day one — `Component.features` is a first-class list, and
-`FEATURE_AVAILABILITY` is its own elimination stage.
+An earlier draft of this document claimed you can't tell whether a service
+supports zone redundancy in a region. That was wrong and is corrected here,
+because the distinction changes what the engine is for.
 
-Coverage will be uneven, because the per-service capability APIs are uneven.
-Unknown ≠ available: a feature the snapshot cannot confirm produces a **risk on
-the surviving candidate**, not a silent pass.
+The data *is* documented. What it isn't is **in one place at the granularity a
+placement decision needs**. [Azure Services That Support Availability
+Zones](https://learn.microsoft.com/en-us/azure/reliability/availability-zones-service-support)
+has three columns — Service, Zone-redundant, Zonal — and **no region column**; it
+tells you a service supports AZs *somewhere*. The page says so itself: *"some
+services might support availability zones for only specific tiers or regions"*,
+pointing at ~80 individual service reliability guides. Meanwhile some RPs expose
+a proper capabilities API and others don't, and subscription-specific
+restrictions aren't documented anywhere because they're per-tenant.
+
+So the engine's job here is **aggregation, not discovery** — and the thing it adds
+that no doc page can is answering the question *as of a fixed date*, which is what
+makes a recommendation auditable.
+
+Coverage will be uneven. **Unknown ≠ available:** a capability the snapshot cannot
+confirm produces a risk on the surviving candidate, never a silent pass.
 
 ### 3. Freshness fights reproducibility
 
 Pinning resolves it. Every decision record carries the snapshot version and
 per-source as-of dates, so partial staleness is visible. Re-running against a
-newer snapshot then produces a **diff** — *"westeurope is no longer eliminated:
+newer snapshot produces a **diff** — *"westeurope is no longer eliminated:
 Postgres zone-redundant HA shipped 2026-07"* — which is arguably worth more than
-the original answer, and is the feature that makes the tool something a customer
-returns to rather than runs once.
+the original answer.
 
 ---
 
 ## Scoring model
 
-Six dimensions, each normalised 0–1, weighted by the caller's `priorities` block
-(normalised, so relative magnitude is what matters):
+Five weights, each traceable to a CAF criterion:
 
-| Dimension | What it measures |
+| Weight | CAF criterion |
 |---|---|
-| `latency` | Demand-share-weighted round-trip from declared demand origins |
-| `cost` | Modelled monthly cost of the resolved service set at declared capacity |
-| `capacity_confidence` | Aggregate confidence that the declared capacity is actually obtainable |
-| `resiliency` | AZ count, geo-pairing, topology fit, blast-radius separation |
-| `operational_fit` | Overlap with existing footprint and network anchors |
-| `sustainability` | Regional carbon intensity |
+| `latency` | Choose regions close to your users |
+| `cost` | Compare pricing |
+| `capacity_confidence` | Plan for capacity constraints (the inferred part; proven restrictions eliminate) |
+| `region_category` | Azure's own Recommended vs Alternate classification |
+| `landing_zone_expansion` | The [landing-zone region guidance](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/considerations/regions): a new hub or vWAN hub in the Connectivity subscription, gateways, DNS forwarders, identity expansion, workspace placement |
 
-The weights are the customer's risk posture made explicit. The GPU scenario
-weights capacity at 0.50; the landing-zone scenario weights operational fit at
-0.30. **Publishing the weights alongside the answer is what makes the answer
-arguable rather than oracular** — the reader can disagree with the weighting
-instead of disagreeing with the tool.
+Weights are the customer's risk posture made explicit — the GPU scenario weights
+capacity at 0.50, the landing-zone scenario weights expansion at 0.35.
+**Publishing the weights alongside the answer is what makes the answer arguable
+rather than oracular.**
 
 ### Deterministic core; LLMs only at the edges
 
-Constraint filtering and scoring are deterministic and reproducible, because a
-placement decision gets challenged in a design review and has to survive being
-re-run. LLMs earn their place at three edges, none of which touch ranking:
-
-- **Intake** — prose or an architecture diagram → a validated requirements file.
-- **Curation** — turning documentation into structured facts during ingest, with a human-reviewable diff.
-- **Narration** — turning a decision record into the paragraph a customer reads.
+Filtering and scoring are deterministic and reproducible, because a placement
+decision gets challenged in a design review and has to survive being re-run. LLMs
+earn their place at three edges, none of which touch ranking: **intake** (prose or
+a diagram → a validated requirements file), **curation** (documentation →
+structured facts, with a human-reviewable diff), and **narration** (a decision
+record → the paragraph a customer reads).
 
 ---
 
-## Output: the answer is a topology
+## Output
 
-Never a bare region. A workload declaring `active-passive` with
-`geo_pair_required` has no meaningful single-region answer, and the failure mode
-of pretending otherwise is a recommendation that cannot actually be built.
+**The answer is a topology, never a bare region.** A workload with a
+five-minute-RTO flow has no meaningful single-region answer.
 
-Every candidate carries its placements (region + role + which components land
-there), its subscores with evidence, and its residual risks. And every
-**elimination** is recorded with the rule that fired and the fact that proved it
-— because *"why not region X"* is the question that actually gets asked, and
-answering it is most of the tool's value.
+Every candidate carries three views: region-centric (`placements` — what lands
+where), component-centric (`components` — the **derived** topology per component
+and which flow drove it), and flow-centric (`flows` — whether each flow got split,
+what latency and egress that cost, whether its RTO/RPO is met).
 
-An empty result is a legitimate answer: `recommended: null` with a complete
-elimination list is the engine correctly reporting that the requirements are
-unsatisfiable, which is a finding, not a failure.
+Every **elimination** records the rule that fired and the fact that proved it,
+because *"why not region X"* is the question that actually gets asked.
+
+And when nothing fits, the record carries **relaxations** rather than an error:
+*"nightly-reporting is low-criticality — split it to westeurope and everything
+else fits in germanywestcentral."* That is what flow criticality buys, and it is
+the difference between advice and an error message.
+
+---
+
+## Decisions taken
+
+| # | Decision |
+|---|---|
+| 1 | Residency declarable at workload, flow, and component level; a component's effective envelope is the intersection |
+| 2 | **Topology is an engine output**, derived from flow RTO/RPO, with a per-component override for standing mandates |
+| 3 | `horizon` + per-component `growth` are scored. Commitment lock-in is **not** modelled — Azure savings plans apply across regions and families, so commitment is placement-neutral, and RIs are declining |
+| 4 | Capability data shape follows the sources; deferred until the first capability ingester exists rather than guessed at |
+| 5 | **ARM resource type is the primary way to name a component**; archetypes are the optional "help me choose" path |
+| 6 | Five weights, all CAF-traceable. Sustainability cut. Region pairing de-emphasized per current CAF |
+| 7 | **WAF flows are the structural core**, with an implicit single-flow fallback |
 
 ---
 
 ## Build order
 
 The four scenarios in [`../scenarios/`](../scenarios/) are the **acceptance set,
-not a roadmap**. Each stresses a different constraint family, and the engine
-needs all four families in the model from the start:
+not a roadmap** — each stresses a different constraint family, and the engine
+needs all four in the model from the start:
 
 | Scenario | Stresses |
 |---|---|
-| `gpu-training` | Capacity confidence, SKU availability, accelerator interconnect |
-| `eu-residency` | Residency & compliance hard filters, feature-level encryption |
-| `three-tier` | Multi-service co-location, geo-pairing, split global demand |
-| `lz-expansion` | Tenant context, policy whitelist, existing-footprint fit |
+| `gpu-training` | Capacity confidence, SKU availability, an unsplittable flow |
+| `eu-residency` | Residency & compliance filters, two flows with different RTOs in one workload |
+| `three-tier` | Many services, split global demand, flows of differing criticality |
+| `lz-expansion` | Tenant context, policy whitelist, landing-zone expansion cost |
 
 What *is* sequenced is the **data ingesters, in descending order of signal
 quality** — deterministic facts first, inferred signals last:
 
-1. Region metadata, geo-pairs, AZ support — deterministic, small, high leverage
+1. Region metadata, geo-pairs, AZ support, **region category** — deterministic, small, high leverage
 2. Service availability by region — deterministic
-3. Feature-level capability APIs — deterministic, uneven
+3. Capability-level data — deterministic, fragmented
 4. Pricing — deterministic, large
 5. Latency matrix — measured
 6. Residency / compliance — curated

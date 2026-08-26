@@ -4,22 +4,31 @@
   "$defs": {
     "Candidate": {
       "additionalProperties": false,
-      "description": "A complete, viable topology \u2014 never a bare region.\n\nResiliency requirements make the unit of answer a region *set*: a workload\nasking for active-passive with a paired secondary has no meaningful\nsingle-region answer.",
+      "description": "A complete, viable topology \u2014 never a bare region.\n\nRecovery requirements make the unit of answer a region *set*: a workload with\na five-minute-RTO flow has no meaningful single-region answer.",
       "properties": {
         "rank": {
           "title": "Rank",
           "type": "integer"
-        },
-        "topology": {
-          "description": "Echo of the requested resiliency topology.",
-          "title": "Topology",
-          "type": "string"
         },
         "placements": {
           "items": {
             "$ref": "#/$defs/Placement"
           },
           "title": "Placements",
+          "type": "array"
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/ComponentDecision"
+          },
+          "title": "Components",
+          "type": "array"
+        },
+        "flows": {
+          "items": {
+            "$ref": "#/$defs/FlowOutcome"
+          },
+          "title": "Flows",
           "type": "array"
         },
         "score": {
@@ -70,17 +79,94 @@
       },
       "required": [
         "rank",
-        "topology",
         "placements",
+        "components",
         "score",
         "subscores"
       ],
       "title": "Candidate",
       "type": "object"
     },
+    "ComponentDecision": {
+      "additionalProperties": false,
+      "description": "The component-centric view, including the topology the engine *derived*.\n\nTopology is an output. A component inherits the strictest recovery targets\namong the flows it serves, so a reporting store sitting only on a 24-hour\nflow is not made to pay for active-passive.",
+      "properties": {
+        "component": {
+          "title": "Component",
+          "type": "string"
+        },
+        "topology": {
+          "description": "Derived topology, e.g. 'zonal', 'active-passive'.",
+          "title": "Topology",
+          "type": "string"
+        },
+        "regions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array"
+        },
+        "driving_flow": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The flow whose RTO/RPO set this topology.",
+          "title": "Driving Flow"
+        },
+        "derived_rto": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Derived Rto"
+        },
+        "derived_rpo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Derived Rpo"
+        },
+        "rationale": {
+          "title": "Rationale",
+          "type": "string"
+        },
+        "overridden": {
+          "default": false,
+          "description": "True when the requirements pinned this topology rather than the engine.",
+          "title": "Overridden",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "component",
+        "topology",
+        "regions",
+        "rationale"
+      ],
+      "title": "ComponentDecision",
+      "type": "object"
+    },
     "Elimination": {
       "additionalProperties": false,
-      "description": "Why a region (or region pair) never made it to scoring.",
+      "description": "Why a region never reached scoring.",
       "properties": {
         "region": {
           "title": "Region",
@@ -90,7 +176,7 @@
           "$ref": "#/$defs/EliminationStage"
         },
         "rule": {
-          "description": "The specific rule that fired, e.g. 'residency.jurisdictions'.",
+          "description": "The rule that fired, e.g. 'residency.jurisdictions'.",
           "title": "Rule",
           "type": "string"
         },
@@ -104,8 +190,19 @@
             }
           ],
           "default": null,
-          "description": "Component that triggered it, when attributable.",
           "title": "Component"
+        },
+        "flow": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Flow"
         },
         "reason": {
           "title": "Reason",
@@ -129,15 +226,16 @@
       "type": "object"
     },
     "EliminationStage": {
+      "description": "Hard-filter stages, in evaluation order. The first five map to CAF's\n'Select Azure regions' criteria.",
       "enum": [
         "residency",
         "compliance",
         "service-availability",
-        "feature-availability",
+        "capability-availability",
         "capacity",
         "latency-budget",
         "resiliency",
-        "affinity",
+        "flow-constraint",
         "landing-zone-policy"
       ],
       "title": "EliminationStage",
@@ -145,15 +243,15 @@
     },
     "Evidence": {
       "additionalProperties": false,
-      "description": "A single cited fact. Anything asserted by the engine traces back to one of these.",
+      "description": "A single cited fact. Everything the engine asserts traces back to one.",
       "properties": {
         "source": {
-          "description": "Fact source id, e.g. 'products-by-region', 'compute-skus', 'retail-prices'.",
+          "description": "Fact source id, e.g. 'arm-locations', 'compute-skus', 'retail-prices', 'postgres-capabilities'.",
           "title": "Source",
           "type": "string"
         },
         "as_of": {
-          "description": "When the underlying fact was observed, not when this record was written.",
+          "description": "When the fact was observed, not when this record was written.",
           "format": "date-time",
           "title": "As Of",
           "type": "string"
@@ -168,7 +266,7 @@
             }
           ],
           "default": null,
-          "description": "Locator within the source \u2014 API path, row key, or document anchor.",
+          "description": "Locator within the source \u2014 API path or row key.",
           "title": "Ref"
         },
         "detail": {
@@ -185,7 +283,7 @@
         },
         "confidence": {
           "default": 1.0,
-          "description": "1.0 for deterministic facts (a service is or is not in a region). Below 1.0 for inferred signals such as capacity, where no authoritative API exists.",
+          "description": "1.0 for deterministic facts \u2014 a service is or is not in a region, a SKU is or is not restricted for this subscription. Below 1.0 for inferred signals such as capacity headroom, where no authoritative API exists.",
           "maximum": 1.0,
           "minimum": 0.0,
           "title": "Confidence",
@@ -199,9 +297,106 @@
       "title": "Evidence",
       "type": "object"
     },
+    "FlowOutcome": {
+      "additionalProperties": false,
+      "description": "How one WAF flow fares under a candidate.\n\nA flow split across regions is not necessarily wrong \u2014 but it must be\nvisible, priced, and attributed to the flow's criticality.",
+      "properties": {
+        "flow": {
+          "title": "Flow",
+          "type": "string"
+        },
+        "criticality": {
+          "title": "Criticality",
+          "type": "string"
+        },
+        "regions": {
+          "description": "Regions this flow's path spans.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array"
+        },
+        "split": {
+          "description": "True when the path crosses a region boundary.",
+          "title": "Split",
+          "type": "boolean"
+        },
+        "meets_rto": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Meets Rto"
+        },
+        "meets_rpo": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Meets Rpo"
+        },
+        "added_latency_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Extra round-trip introduced by splitting the path.",
+          "title": "Added Latency Ms"
+        },
+        "egress_cost_monthly_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Cross-region data transfer cost implied by the split.",
+          "title": "Egress Cost Monthly Usd"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        }
+      },
+      "required": [
+        "flow",
+        "criticality",
+        "regions",
+        "split"
+      ],
+      "title": "FlowOutcome",
+      "type": "object"
+    },
     "Placement": {
       "additionalProperties": false,
-      "description": "One region within a candidate topology, plus what lands there.",
+      "description": "The region-centric view: what lands where.",
       "properties": {
         "region": {
           "title": "Region",
@@ -218,7 +413,6 @@
           "type": "array"
         },
         "components": {
-          "description": "Component names placed in this region.",
           "items": {
             "type": "string"
           },
@@ -243,9 +437,70 @@
       "title": "RegionRole",
       "type": "string"
     },
+    "Relaxation": {
+      "additionalProperties": false,
+      "description": "A specific, priced way to unstick an over-constrained problem.\n\nThis is what flow criticality buys. Rather than returning 'infeasible', the\nengine can say which low-criticality flow to split, or which capability to\ndrop, and what that opens up.",
+      "properties": {
+        "target": {
+          "description": "The flow, component, or constraint to relax.",
+          "title": "Target",
+          "type": "string"
+        },
+        "kind": {
+          "description": "'split-flow' | 'relax-capability' | 'widen-residency' | 'drop-optional-component' | 'raise-quota' | 'relax-latency-budget'",
+          "title": "Kind",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "unlocks": {
+          "description": "Regions or topologies this enables.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Unlocks",
+          "type": "array"
+        },
+        "gives_up": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the relaxation costs.",
+          "title": "Gives Up"
+        },
+        "criticality_of_target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why this is a defensible thing to relax first.",
+          "title": "Criticality Of Target"
+        }
+      },
+      "required": [
+        "target",
+        "kind",
+        "detail"
+      ],
+      "title": "Relaxation",
+      "type": "object"
+    },
     "Risk": {
       "additionalProperties": false,
-      "description": "Something true about the recommendation that the reader must know.\n\nDistinct from an elimination: the candidate survived, but not cleanly. A\nthin capacity signal or a preview-stage feature belongs here.",
+      "description": "Something true about a surviving recommendation that the reader must know.\n\nDistinct from an elimination: the candidate survived, but not cleanly. A thin\ncapacity signal, a preview-stage capability, or a capability the snapshot\ncould not confirm belongs here \u2014 unknown is never silently treated as\navailable.",
       "properties": {
         "severity": {
           "description": "'low' | 'medium' | 'high'",
@@ -253,7 +508,7 @@
           "type": "string"
         },
         "category": {
-          "description": "e.g. 'capacity', 'preview-feature', 'stale-data', 'single-point'.",
+          "description": "e.g. 'capacity', 'preview-capability', 'unconfirmed-capability', 'stale-data', 'region-maturity', 'flow-split'.",
           "title": "Category",
           "type": "string"
         },
@@ -291,7 +546,7 @@
     },
     "SnapshotRef": {
       "additionalProperties": false,
-      "description": "Pins the world data a decision was made against.\n\nWithout this, a decision is unreproducible and a re-run six months later is\nindistinguishable from a bug.",
+      "description": "Pins the world data a decision was made against. Without it, a decision is\nunreproducible and a re-run six months later is indistinguishable from a bug.",
       "properties": {
         "version": {
           "description": "Snapshot version id, e.g. '2026-08-01'.",
@@ -329,7 +584,7 @@
     },
     "Subscore": {
       "additionalProperties": false,
-      "description": "One scored dimension for one candidate.",
+      "description": "One scored dimension for one candidate. Weights come from the caller's\n`priorities` block \u2014 the reader can disagree with the weighting instead of\ndisagreeing with the tool.",
       "properties": {
         "value": {
           "description": "Normalised 0-1, higher is better.",
@@ -450,7 +705,7 @@
       "$ref": "#/$defs/TenantRef"
     },
     "requirements_digest": {
-      "description": "Hash of the normalized requirements that produced this record.",
+      "description": "Hash of the requirements that produced this record.",
       "title": "Requirements Digest",
       "type": "string"
     },
@@ -464,7 +719,7 @@
         }
       ],
       "default": null,
-      "description": "None when every region was eliminated \u2014 a legitimate and important answer."
+      "description": "None when every region was eliminated \u2014 a legitimate and important answer, and the case where `relaxations` earns its keep."
     },
     "alternatives": {
       "items": {
@@ -480,7 +735,15 @@
       "title": "Eliminations",
       "type": "array"
     },
+    "relaxations": {
+      "items": {
+        "$ref": "#/$defs/Relaxation"
+      },
+      "title": "Relaxations",
+      "type": "array"
+    },
     "warnings": {
+      "description": "Anything the engine could not honour, e.g. a declared horizon it did not model. Never silently ignore a stated requirement.",
       "items": {
         "type": "string"
       },

@@ -1,6 +1,6 @@
 # Scenario 1 — GPU / AI training placement.
-# Stresses: capacity confidence (the weakest signal in the whole engine),
-# SKU-level availability, accelerator interconnect, cost sensitivity.
+# Stresses: capacity confidence (the weakest signal in the engine), SKU-level
+# availability, accelerator interconnect, and a flow that must not be split.
 apiVersion: placement/v0
 workload: frontier-model-training
 owner: ml-platform
@@ -12,44 +12,44 @@ residency:
   cloud: public
   jurisdictions: [eu]
 
+horizon: 18mo
+
 demand:
   - geography: eu-west
     share: 1.0
 
 components:
   - name: training-cluster
-    kind: ai-training
     service: Microsoft.Compute/virtualMachineScaleSets
-    features: [infiniband, ultra-disk]
+    capabilities: [infiniband, ultra-disk]
     capacity:
       capability_class: accelerator
       sku_hints: [Standard_ND96isr_H100_v5]
       accelerators: 512
       instances: 64
       interconnect: infiniband
-  - name: checkpoints
-    kind: object-storage
-    features: [premium-block-blob, zone-redundant-storage]
+      growth: 2x/12mo
   - name: dataset
-    kind: object-storage
-    features: [hierarchical-namespace]
+    service: Microsoft.Storage/storageAccounts
+    capabilities: [hierarchical-namespace, premium-block-blob]
+  - name: checkpoints
+    service: Microsoft.Storage/storageAccounts
+    capabilities: [premium-block-blob, zone-redundant-storage]
 
-affinity:
-  - components: [training-cluster, checkpoints]
-    rule: same-region
-    reason: Checkpoint write bandwidth makes cross-region egress untenable.
-  - components: [training-cluster, dataset]
-    rule: same-region
-
-resiliency:
-  topology: single
-  rto: 24h
-  rpo: 1h
+flows:
+  - name: training-run
+    type: system
+    criticality: high
+    path: [dataset, training-cluster, checkpoints]
+    latency_sensitivity: high
+    rto: 24h
+    rpo: 1h
+    splittable: false          # checkpoint write bandwidth makes a cross-region split untenable
+    data_volume_gb_month: 400000
 
 priorities:
   capacity_confidence: 0.50
-  cost: 0.25
+  cost: 0.30
   latency: 0.05
-  resiliency: 0.05
-  operational_fit: 0.05
-  sustainability: 0.10
+  region_category: 0.10
+  landing_zone_expansion: 0.05
