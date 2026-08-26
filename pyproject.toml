@@ -1,0 +1,42 @@
+[project]
+name = "azure-placement-engine"
+version = "0.0.1"
+description = "Decides Azure region placement from normalized workload requirements."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "rich>=13.7",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+azure = [
+    "azure-identity>=1.17",
+    "azure-mgmt-resource>=23.0",
+    "azure-mgmt-compute>=32.0",
+    "azure-mgmt-resourcegraph>=8.0",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+ape = "placement.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/placement"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

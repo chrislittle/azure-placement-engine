@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# Local tenant context may contain customer identifiers — never commit by default.
+tenant/*.json
+!tenant/example*.json
+
+# Raw ingest cache; snapshots under snapshots/ ARE committed (they are the pinned truth).
+.cache/

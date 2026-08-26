@@ -1,0 +1,74 @@
+# Scenario 4 — landing-zone expansion.
+# Stresses: tenant context as a first-class input, allowedLocations policy as a
+# hard whitelist, existing-footprint operational fit, network anchors, geo-pairing.
+apiVersion: placement/v0
+workload: emea-expansion
+owner: platform-ccoe
+description: >
+  Customer runs in westeurope today and needs region two. The existing estate is
+  the dominant input — the engine's job is to respect it, not to re-plan it.
+
+residency:
+  cloud: public
+  jurisdictions: [eu]
+  # Populated from the customer's allowedLocations policy assignment by the
+  # tenant collector; listed inline here so the scenario runs without a tenant file.
+  allowed_regions:
+    - westeurope
+    - northeurope
+    - swedencentral
+    - francecentral
+    - germanywestcentral
+    - italynorth
+    - polandcentral
+    - spaincentral
+    - switzerlandnorth
+    - norwayeast
+
+demand:
+  - geography: eu-west
+    share: 0.6
+    latency_p99_ms: 40
+  - geography: eu-north
+    share: 0.4
+    latency_p99_ms: 60
+
+components:
+  - name: app
+    kind: container-platform
+    features: [availability-zones, private-cluster]
+    capacity:
+      capability_class: general
+      vcpu: 96
+      instances: 12
+  - name: db
+    kind: relational-transactional
+    features: [zone-redundant-ha, geo-replication]
+  - name: files
+    kind: object-storage
+    features: [zone-redundant-storage, geo-redundant-storage]
+
+affinity:
+  - components: [app, db]
+    rule: same-region
+
+resiliency:
+  topology: active-passive
+  rto: 1h
+  rpo: 5m
+  geo_pair_required: true
+  min_availability_zones: 3
+
+landingZone:
+  existing_regions: [westeurope]
+  network_anchors:
+    - expressroute:amsterdam
+    - vwan-hub:westeurope
+
+priorities:
+  operational_fit: 0.30
+  resiliency: 0.25
+  latency: 0.20
+  cost: 0.15
+  capacity_confidence: 0.05
+  sustainability: 0.05

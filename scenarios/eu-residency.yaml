@@ -1,0 +1,62 @@
+# Scenario 2 — data-residency-driven placement.
+# Stresses: hard residency/compliance filters, EU Data Boundary, feature-level
+# encryption requirements, and the case where the constraint envelope — not the
+# scoring — determines the answer.
+apiVersion: placement/v0
+workload: patient-records
+owner: health-data-platform
+description: >
+  German patient data under GDPR with a national in-country requirement.
+  Residency is absolute; everything else is negotiable.
+
+residency:
+  cloud: public
+  jurisdictions: [de]
+  boundaries: [eu-data-boundary]
+
+compliance:
+  scope: [iso-27001, iso-27018, gdpr, c5]
+
+demand:
+  - geography: eu-central
+    share: 1.0
+    latency_p99_ms: 30
+    latency_budget_hard_ms: 60
+
+components:
+  - name: records-db
+    kind: relational-transactional
+    classification: restricted
+    features: [zone-redundant-ha, customer-managed-key, private-link, geo-backup]
+  - name: api
+    kind: container-platform
+    classification: restricted
+    features: [availability-zones, private-cluster, confidential-nodes]
+    capacity:
+      capability_class: confidential
+      vcpu: 64
+      instances: 8
+  - name: audit-log
+    kind: object-storage
+    classification: restricted
+    features: [immutable-storage, customer-managed-key]
+
+affinity:
+  - components: [records-db, api, audit-log]
+    rule: same-region
+    reason: In-country requirement applies to every component holding patient data.
+
+resiliency:
+  topology: active-passive
+  rto: 4h
+  rpo: 15m
+  geo_pair_required: true
+  min_availability_zones: 3
+
+priorities:
+  resiliency: 0.35
+  latency: 0.25
+  operational_fit: 0.15
+  capacity_confidence: 0.10
+  cost: 0.10
+  sustainability: 0.05

@@ -1,0 +1,598 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Requirements",
+  "$defs": {
+    "Affinity": {
+      "additionalProperties": false,
+      "properties": {
+        "components": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Components",
+          "type": "array"
+        },
+        "rule": {
+          "$ref": "#/$defs/AffinityRule"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "components",
+        "rule"
+      ],
+      "title": "Affinity",
+      "type": "object"
+    },
+    "AffinityRule": {
+      "enum": [
+        "same-region",
+        "same-geography",
+        "separate-region",
+        "separate-geography"
+      ],
+      "title": "AffinityRule",
+      "type": "string"
+    },
+    "CapabilityClass": {
+      "description": "Capability classes from the thesis, used here as a coarse pre-filter over\nreal VM families. Narrower needs go in `sku_hints`, which the engine treats\nas a hard constraint that shrinks the qualifying pool.",
+      "enum": [
+        "general",
+        "compute-intensive",
+        "memory-heavy",
+        "storage-optimised",
+        "confidential",
+        "accelerator"
+      ],
+      "title": "CapabilityClass",
+      "type": "string"
+    },
+    "CapacityRequest": {
+      "additionalProperties": false,
+      "description": "Declared demand for compute. `capability_class` is the abstract ask;\n`sku_hints` narrows it when the workload genuinely cares about silicon.",
+      "properties": {
+        "capability_class": {
+          "$ref": "#/$defs/CapabilityClass",
+          "default": "general"
+        },
+        "sku_hints": {
+          "description": "Concrete VM SKUs, e.g. ['Standard_ND96isr_H100_v5']. Narrowing here shrinks the qualifying pool and lowers capacity confidence \u2014 specificity is priced.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Sku Hints",
+          "type": "array"
+        },
+        "vcpu": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vcpu"
+        },
+        "memory_gb": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Gb"
+        },
+        "instances": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instances"
+        },
+        "accelerators": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Total GPU/accelerator count required.",
+          "title": "Accelerators"
+        },
+        "interconnect": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Accelerator fabric requirement, e.g. 'infiniband', 'nvlink-domain>=8'.",
+          "title": "Interconnect"
+        },
+        "spot_tolerant": {
+          "default": false,
+          "title": "Spot Tolerant",
+          "type": "boolean"
+        }
+      },
+      "title": "CapacityRequest",
+      "type": "object"
+    },
+    "Cloud": {
+      "enum": [
+        "public",
+        "usgov",
+        "china"
+      ],
+      "title": "Cloud",
+      "type": "string"
+    },
+    "Compliance": {
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "description": "Certification/regulation scope, e.g. ['pci-dss', 'iso-27001', 'hipaa', 'dora'].",
+          "items": {
+            "type": "string"
+          },
+          "title": "Scope",
+          "type": "array"
+        }
+      },
+      "title": "Compliance",
+      "type": "object"
+    },
+    "Component": {
+      "additionalProperties": false,
+      "description": "One piece of the workload. Placement is solved for the component set as a\nwhole, because affinity rules couple them.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ComponentKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "service": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional pin to a concrete Azure resource type, e.g. 'Microsoft.ContainerService/managedClusters'. When set, `kind` is advisory.",
+          "title": "Service"
+        },
+        "features": {
+          "description": "Feature-level requirements \u2014 the granularity that actually breaks deployments, e.g. ['availability-zones', 'zone-redundant-ha', 'customer-managed-key', 'private-link'].",
+          "items": {
+            "type": "string"
+          },
+          "title": "Features",
+          "type": "array"
+        },
+        "classification": {
+          "$ref": "#/$defs/DataClassification",
+          "default": "internal"
+        },
+        "capacity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CapacityRequest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "required": {
+          "default": true,
+          "description": "False marks the component as droppable if it alone blocks an otherwise good region.",
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Component",
+      "type": "object"
+    },
+    "ComponentKind": {
+      "description": "Outcome archetypes. The resolver maps these to concrete Azure services; a\ncomponent may instead pin `service` directly when the choice is already made.",
+      "enum": [
+        "container-platform",
+        "serverless-compute",
+        "virtual-machines",
+        "batch-compute",
+        "ai-training",
+        "ai-inference",
+        "relational-transactional",
+        "document-store",
+        "cache",
+        "object-storage",
+        "event-stream",
+        "message-queue",
+        "search",
+        "cdn-edge",
+        "secrets"
+      ],
+      "title": "ComponentKind",
+      "type": "string"
+    },
+    "DataClassification": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ],
+      "title": "DataClassification",
+      "type": "string"
+    },
+    "DemandSource": {
+      "additionalProperties": false,
+      "description": "Where the users are. Drives latency scoring; only a hard filter when\n`latency_budget_hard_ms` is set.",
+      "properties": {
+        "geography": {
+          "description": "Demand origin key, e.g. 'eu-west', 'us-east', 'apac-southeast'.",
+          "title": "Geography",
+          "type": "string"
+        },
+        "share": {
+          "description": "Fraction of total demand from this origin.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Share",
+          "type": "number"
+        },
+        "latency_p99_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Target p99 network latency from this origin. Scored, not enforced.",
+          "title": "Latency P99 Ms"
+        },
+        "latency_budget_hard_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Absolute ceiling. Regions exceeding it are eliminated, not merely penalised.",
+          "title": "Latency Budget Hard Ms"
+        }
+      },
+      "required": [
+        "geography",
+        "share"
+      ],
+      "title": "DemandSource",
+      "type": "object"
+    },
+    "LandingZone": {
+      "additionalProperties": false,
+      "description": "The customer's existing reality. Normally sourced from a tenant context\nfile or a live ARM read; the inline fields let a caller work without one.",
+      "properties": {
+        "context": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Path to a tenant context JSON, or the literal 'live' to collect from ARM.",
+          "title": "Context"
+        },
+        "existing_regions": {
+          "description": "Regions the customer already operates in. Scored as operational fit.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Existing Regions",
+          "type": "array"
+        },
+        "network_anchors": {
+          "description": "Fixed attachment points, e.g. ['expressroute:amsterdam', 'vwan-hub:westeurope'].",
+          "items": {
+            "type": "string"
+          },
+          "title": "Network Anchors",
+          "type": "array"
+        },
+        "subscription_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subscription Id"
+        }
+      },
+      "title": "LandingZone",
+      "type": "object"
+    },
+    "Priorities": {
+      "additionalProperties": false,
+      "description": "Weights for the scoring pass. Normalised before use, so relative magnitude\nis what matters, not the sum.",
+      "properties": {
+        "latency": {
+          "default": 0.25,
+          "minimum": 0.0,
+          "title": "Latency",
+          "type": "number"
+        },
+        "cost": {
+          "default": 0.2,
+          "minimum": 0.0,
+          "title": "Cost",
+          "type": "number"
+        },
+        "capacity_confidence": {
+          "default": 0.25,
+          "minimum": 0.0,
+          "title": "Capacity Confidence",
+          "type": "number"
+        },
+        "resiliency": {
+          "default": 0.15,
+          "minimum": 0.0,
+          "title": "Resiliency",
+          "type": "number"
+        },
+        "operational_fit": {
+          "default": 0.1,
+          "minimum": 0.0,
+          "title": "Operational Fit",
+          "type": "number"
+        },
+        "sustainability": {
+          "default": 0.05,
+          "minimum": 0.0,
+          "title": "Sustainability",
+          "type": "number"
+        }
+      },
+      "title": "Priorities",
+      "type": "object"
+    },
+    "Residency": {
+      "additionalProperties": false,
+      "description": "Hard containment rules. Evaluated before anything is scored.",
+      "properties": {
+        "cloud": {
+          "$ref": "#/$defs/Cloud",
+          "default": "public"
+        },
+        "jurisdictions": {
+          "description": "Jurisdiction codes the workload must stay inside, e.g. ['eu'], ['us'], ['de'].",
+          "items": {
+            "type": "string"
+          },
+          "title": "Jurisdictions",
+          "type": "array"
+        },
+        "boundaries": {
+          "description": "Named regulatory boundaries, e.g. ['eu-data-boundary'].",
+          "items": {
+            "type": "string"
+          },
+          "title": "Boundaries",
+          "type": "array"
+        },
+        "allowed_regions": {
+          "description": "Explicit whitelist. When set, nothing outside it is ever a candidate. Usually populated from the landing zone's allowedLocations policy rather than by hand.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Regions",
+          "type": "array"
+        },
+        "excluded_regions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Regions",
+          "type": "array"
+        }
+      },
+      "title": "Residency",
+      "type": "object"
+    },
+    "Resiliency": {
+      "additionalProperties": false,
+      "properties": {
+        "topology": {
+          "$ref": "#/$defs/ResiliencyTopology",
+          "default": "zonal"
+        },
+        "rto": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Recovery time objective, e.g. '15m', '4h'.",
+          "title": "Rto"
+        },
+        "rpo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Recovery point objective, e.g. '5m', '0'.",
+          "title": "Rpo"
+        },
+        "geo_pair_required": {
+          "default": false,
+          "description": "Require the secondary to be the Azure-designated paired region \u2014 sequential platform updates, paired-region recovery priority, and some service replication depend on it.",
+          "title": "Geo Pair Required",
+          "type": "boolean"
+        },
+        "min_availability_zones": {
+          "default": 0,
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Min Availability Zones",
+          "type": "integer"
+        }
+      },
+      "title": "Resiliency",
+      "type": "object"
+    },
+    "ResiliencyTopology": {
+      "enum": [
+        "single",
+        "zonal",
+        "active-passive",
+        "active-active"
+      ],
+      "title": "ResiliencyTopology",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "default": "placement/v0",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "workload": {
+      "title": "Workload",
+      "type": "string"
+    },
+    "owner": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Owner"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "residency": {
+      "$ref": "#/$defs/Residency"
+    },
+    "compliance": {
+      "$ref": "#/$defs/Compliance"
+    },
+    "demand": {
+      "items": {
+        "$ref": "#/$defs/DemandSource"
+      },
+      "title": "Demand",
+      "type": "array"
+    },
+    "components": {
+      "items": {
+        "$ref": "#/$defs/Component"
+      },
+      "minItems": 1,
+      "title": "Components",
+      "type": "array"
+    },
+    "affinity": {
+      "items": {
+        "$ref": "#/$defs/Affinity"
+      },
+      "title": "Affinity",
+      "type": "array"
+    },
+    "resiliency": {
+      "$ref": "#/$defs/Resiliency"
+    },
+    "landingZone": {
+      "$ref": "#/$defs/LandingZone"
+    },
+    "priorities": {
+      "$ref": "#/$defs/Priorities"
+    }
+  },
+  "required": [
+    "workload",
+    "components"
+  ],
+  "type": "object"
+}

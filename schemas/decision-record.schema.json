@@ -1,0 +1,500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DecisionRecord",
+  "$defs": {
+    "Candidate": {
+      "additionalProperties": false,
+      "description": "A complete, viable topology \u2014 never a bare region.\n\nResiliency requirements make the unit of answer a region *set*: a workload\nasking for active-passive with a paired secondary has no meaningful\nsingle-region answer.",
+      "properties": {
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "topology": {
+          "description": "Echo of the requested resiliency topology.",
+          "title": "Topology",
+          "type": "string"
+        },
+        "placements": {
+          "items": {
+            "$ref": "#/$defs/Placement"
+          },
+          "title": "Placements",
+          "type": "array"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "subscores": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Subscore"
+          },
+          "title": "Subscores",
+          "type": "object"
+        },
+        "risks": {
+          "items": {
+            "$ref": "#/$defs/Risk"
+          },
+          "title": "Risks",
+          "type": "array"
+        },
+        "estimated_cost_monthly_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Cost Monthly Usd"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "One-line human-readable rationale.",
+          "title": "Summary"
+        }
+      },
+      "required": [
+        "rank",
+        "topology",
+        "placements",
+        "score",
+        "subscores"
+      ],
+      "title": "Candidate",
+      "type": "object"
+    },
+    "Elimination": {
+      "additionalProperties": false,
+      "description": "Why a region (or region pair) never made it to scoring.",
+      "properties": {
+        "region": {
+          "title": "Region",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/EliminationStage"
+        },
+        "rule": {
+          "description": "The specific rule that fired, e.g. 'residency.jurisdictions'.",
+          "title": "Rule",
+          "type": "string"
+        },
+        "component": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Component that triggered it, when attributable.",
+          "title": "Component"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "region",
+        "stage",
+        "rule",
+        "reason"
+      ],
+      "title": "Elimination",
+      "type": "object"
+    },
+    "EliminationStage": {
+      "enum": [
+        "residency",
+        "compliance",
+        "service-availability",
+        "feature-availability",
+        "capacity",
+        "latency-budget",
+        "resiliency",
+        "affinity",
+        "landing-zone-policy"
+      ],
+      "title": "EliminationStage",
+      "type": "string"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "A single cited fact. Anything asserted by the engine traces back to one of these.",
+      "properties": {
+        "source": {
+          "description": "Fact source id, e.g. 'products-by-region', 'compute-skus', 'retail-prices'.",
+          "title": "Source",
+          "type": "string"
+        },
+        "as_of": {
+          "description": "When the underlying fact was observed, not when this record was written.",
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Locator within the source \u2014 API path, row key, or document anchor.",
+          "title": "Ref"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "confidence": {
+          "default": 1.0,
+          "description": "1.0 for deterministic facts (a service is or is not in a region). Below 1.0 for inferred signals such as capacity, where no authoritative API exists.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "source",
+        "as_of"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Placement": {
+      "additionalProperties": false,
+      "description": "One region within a candidate topology, plus what lands there.",
+      "properties": {
+        "region": {
+          "title": "Region",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/RegionRole"
+        },
+        "zones": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Zones",
+          "type": "array"
+        },
+        "components": {
+          "description": "Component names placed in this region.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Components",
+          "type": "array"
+        }
+      },
+      "required": [
+        "region",
+        "role"
+      ],
+      "title": "Placement",
+      "type": "object"
+    },
+    "RegionRole": {
+      "enum": [
+        "primary",
+        "secondary",
+        "tertiary",
+        "witness"
+      ],
+      "title": "RegionRole",
+      "type": "string"
+    },
+    "Risk": {
+      "additionalProperties": false,
+      "description": "Something true about the recommendation that the reader must know.\n\nDistinct from an elimination: the candidate survived, but not cleanly. A\nthin capacity signal or a preview-stage feature belongs here.",
+      "properties": {
+        "severity": {
+          "description": "'low' | 'medium' | 'high'",
+          "title": "Severity",
+          "type": "string"
+        },
+        "category": {
+          "description": "e.g. 'capacity', 'preview-feature', 'stale-data', 'single-point'.",
+          "title": "Category",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "mitigation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mitigation"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "severity",
+        "category",
+        "detail"
+      ],
+      "title": "Risk",
+      "type": "object"
+    },
+    "SnapshotRef": {
+      "additionalProperties": false,
+      "description": "Pins the world data a decision was made against.\n\nWithout this, a decision is unreproducible and a re-run six months later is\nindistinguishable from a bug.",
+      "properties": {
+        "version": {
+          "description": "Snapshot version id, e.g. '2026-08-01'.",
+          "title": "Version",
+          "type": "string"
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Content hash of the snapshot as loaded.",
+          "title": "Digest"
+        },
+        "sources": {
+          "additionalProperties": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": "Per-source as-of dates, so partial staleness is visible.",
+          "title": "Sources",
+          "type": "object"
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "title": "SnapshotRef",
+      "type": "object"
+    },
+    "Subscore": {
+      "additionalProperties": false,
+      "description": "One scored dimension for one candidate.",
+      "properties": {
+        "value": {
+          "description": "Normalised 0-1, higher is better.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Value",
+          "type": "number"
+        },
+        "weight": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Weight",
+          "type": "number"
+        },
+        "rationale": {
+          "title": "Rationale",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "value",
+        "weight",
+        "rationale"
+      ],
+      "title": "Subscore",
+      "type": "object"
+    },
+    "TenantRef": {
+      "additionalProperties": false,
+      "description": "Pins the customer-specific context used, without embedding identifiers by default.",
+      "properties": {
+        "mode": {
+          "description": "'offline' | 'live' | 'none'",
+          "title": "Mode",
+          "type": "string"
+        },
+        "collected_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collected At"
+        },
+        "subscription_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subscription Id"
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Digest"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "TenantRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "default": "placement/v0",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "kind": {
+      "default": "DecisionRecord",
+      "title": "Kind",
+      "type": "string"
+    },
+    "workload": {
+      "title": "Workload",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "engine_version": {
+      "title": "Engine Version",
+      "type": "string"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/SnapshotRef"
+    },
+    "tenant": {
+      "$ref": "#/$defs/TenantRef"
+    },
+    "requirements_digest": {
+      "description": "Hash of the normalized requirements that produced this record.",
+      "title": "Requirements Digest",
+      "type": "string"
+    },
+    "recommended": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Candidate"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "None when every region was eliminated \u2014 a legitimate and important answer."
+    },
+    "alternatives": {
+      "items": {
+        "$ref": "#/$defs/Candidate"
+      },
+      "title": "Alternatives",
+      "type": "array"
+    },
+    "eliminations": {
+      "items": {
+        "$ref": "#/$defs/Elimination"
+      },
+      "title": "Eliminations",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "workload",
+    "generated_at",
+    "engine_version",
+    "snapshot",
+    "tenant",
+    "requirements_digest"
+  ],
+  "type": "object"
+}
