@@ -109,6 +109,13 @@ def snapshot_build(
         file_okay=False,
         help="A directory of <region>.json Microsoft.Compute/skus responses, one per region.",
     ),
+    usages_dir: Path | None = typer.Option(
+        None,
+        "--usages-dir",
+        exists=True,
+        file_okay=False,
+        help="A directory of <region>.json Compute usages responses. vCPU quota per family.",
+    ),
     tenant_out: Path | None = typer.Option(
         None,
         "--tenant-out",
@@ -198,7 +205,12 @@ def snapshot_build(
         if tenant_out:
             # Same payload, different destination: SKUs and zones are world facts,
             # restrictions describe what this subscription may deploy.
-            context = compute_restrictions.build(payloads, subscription_id=subscription)
+            usages = (
+                {p.stem: _load(p) for p in sorted(usages_dir.glob('*.json'))} if usages_dir else {}
+            )
+            context = compute_restrictions.build(
+                payloads, usages=usages, subscription_id=subscription
+            )
             tenant_out.parent.mkdir(parents=True, exist_ok=True)
             tenant_out.write_text(
                 context.model_dump_json(indent=2, exclude_none=True), encoding="utf-8"
@@ -206,7 +218,8 @@ def snapshot_build(
             console.print(
                 f"[green]Wrote[/green] {tenant_out} "
                 f"({len(context.sku_restrictions)} SKU restrictions across "
-                f"{len(context.restricted_regions())} regions)"
+                f"{len(context.restricted_regions())} regions, "
+                f"{len(context.quotas)} quota entries)"
             )
 
     if snapshot.regions:

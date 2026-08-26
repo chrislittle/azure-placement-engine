@@ -44,9 +44,9 @@ Early. Contracts, scenarios, and the first ingester are in; the solver is not.
 - [x] Ingester 2 — service availability by region, from ARM provider metadata
 - [x] Ingester 3 — capability level (region zones, Storage SKUs, Postgres per-region flags)
 - [x] Ingester 4 — VM SKUs from `Microsoft.Compute/skus` (projected per region)
-- [x] Tenant context — SKU restrictions as remediation signal
+- [x] Tenant context — SKU restrictions **and vCPU quota** as remediation signals
 - [ ] Ingester 5 — retail pricing
-- [ ] Tenant context — policy `allowedLocations`, quota, existing footprint
+- [ ] Tenant context — policy `allowedLocations`, existing footprint
 - [ ] Constraint solver, topology composition, scoring
 
 ## Use

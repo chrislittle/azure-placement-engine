@@ -442,6 +442,38 @@ The restriction ratio also identifies access-restricted regions without a curate
 list: `uaecentral` 59%, `brazilsoutheast` 48%, `jioindiacentral` 47%, against
 under 10% for ordinary regions.
 
+### Access and quota are two different gates
+
+A correction to the slice above, and an important one: **an absent SKU restriction
+does not mean you can deploy.** Quota is a separate gate, and for GPU families it
+is the one that actually bites. On a live subscription, `Microsoft.Compute/locations/{region}/usages`
+reported **22 of 28 GPU families with a vCPU limit of zero** in West Europe — and
+so did ordinary families like `standardDSv5Family`. Zero quota is the common case
+on a subscription without history, not an edge case.
+
+So deployability is three independent conditions, each with its own remedy:
+
+| Condition | Source | If it fails |
+|---|---|---|
+| The SKU exists in the region | world snapshot | nothing to request |
+| The subscription is not restricted from it | tenant `restrictions[]` | region / zonal access request |
+| There is quota for its family | tenant `usages` | quota increase |
+
+Order matters: access is checked first, because **you cannot raise quota in a
+region you have no entitlement to** — reporting the quota remedy there would send
+someone to file the wrong ticket.
+
+This is the same mistake as the availability-zones one, in a different costume.
+`is_unrestricted()` is deliberately named to say what it checks: a **necessary,
+not sufficient** condition. `assess()` is the question people actually mean, and
+it returns the failing condition and its remediation rather than a bare boolean.
+
+The join between the two APIs needs normalising — the SKU list says
+`standardNDSH100v5Family` while usages says `Standard NCASv3_T4 Family`, so both
+sides are squeezed and lowercased. That matches 183 of 184 families against live
+data. Regional totals (`cores`, `lowPriorityCores`) are kept but flagged, since a
+per-family quota is meaningless if the regional cap is already exhausted.
+
 ### Not every elimination is final
 
 Azure region and zonal access are **not open by default**. A number of regions

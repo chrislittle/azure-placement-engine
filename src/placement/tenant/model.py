@@ -90,6 +90,55 @@ class SkuRestriction(Frozen):
         )
 
 
+def normalise_family(name: str) -> str:
+    """Fold a VM family name to a comparable key.
+
+    The SKU list and the usages API spell families differently — `standardNDSFamily`
+    against `Standard NCASv3_T4 Family` — so both sides are squeezed and lowercased.
+    Matches 183 of 184 families against live data.
+    """
+    return "".join(str(name).split()).lower()
+
+
+class QuotaEntry(Frozen):
+    """vCPU quota for one VM family in one region.
+
+    Quota is the constraint that catches people out, and GPU families especially:
+    on a live subscription **22 of 28 GPU families had a limit of zero** in West
+    Europe, and so did ordinary families like `standardDSv5Family`. A SKU with no
+    restriction is still not deployable without quota, so treating an absent
+    restriction as "deployable" is wrong in the common case, not the edge case.
+    """
+
+    family: str = Field(description="Normalised family key.")
+    display_name: str = Field(description="Raw name as reported.")
+    region: str
+    limit: int
+    current: int = 0
+
+    @property
+    def available(self) -> int:
+        return max(0, self.limit - self.current)
+
+    def covers(self, vcpus: int) -> bool:
+        return self.available >= vcpus
+
+
+class Deployability(Frozen):
+    """Whether a SKU can actually be deployed, and what to do if not.
+
+    Three independent conditions have to hold, and each failure has a different
+    answer: the SKU must exist in the region (world snapshot), the subscription
+    must not be restricted from it, and there must be quota for its family.
+    """
+
+    deployable: bool
+    reason: str
+    remediation: Remediation | None = None
+    quota_available: int | None = None
+    quota_required: int | None = None
+
+
 class TenantContext(BaseModel):
     """A read-only picture of one subscription's reach."""
 
@@ -98,6 +147,7 @@ class TenantContext(BaseModel):
     mode: str = Field(default="offline", description="'offline' or 'live'.")
 
     sku_restrictions: list[SkuRestriction] = Field(default_factory=list)
+    quotas: list[QuotaEntry] = Field(default_factory=list)
     allowed_locations: list[str] = Field(
         default_factory=list,
         description="From `allowedLocations` policy assignments. When set, a hard whitelist.",
@@ -117,14 +167,91 @@ class TenantContext(BaseModel):
                 return restriction
         return None
 
-    def can_deploy(self, sku: str, region: str) -> bool:
-        """Whether this subscription may deploy a SKU in a region.
+    def is_unrestricted(self, sku: str, region: str) -> bool:
+        """Whether no *access* restriction blocks this SKU in this region.
 
-        Absence of a restriction is a positive: the SKU list enumerates every
-        restriction the subscription has, so an unrestricted SKU is deployable.
+        **Necessary, not sufficient** — the same trap as region zone count. An
+        unrestricted SKU still needs quota, and quota for GPU families is
+        routinely zero. Use `assess()` for the question people actually mean.
         """
         restriction = self.restriction_for(sku, region)
         return restriction is None or not restriction.is_whole_region
+
+    def quota_for(self, family: str, region: str) -> QuotaEntry | None:
+        key = normalise_family(family)
+        for entry in self.quotas:
+            if entry.family == key and entry.region == region:
+                return entry
+        return None
+
+    def assess(
+        self, sku: str, region: str, *, family: str | None = None, vcpus_required: int | None = None
+    ) -> Deployability:
+        """Can this subscription deploy this SKU here, and if not, what fixes it?
+
+        Checks access first and quota second, because an access restriction makes
+        the quota question moot — you cannot raise quota for a region you have no
+        entitlement to.
+        """
+        restriction = self.restriction_for(sku, region)
+        if restriction is not None and restriction.is_whole_region:
+            return Deployability(
+                deployable=False,
+                reason=f"{sku} is restricted for this subscription in {region}",
+                remediation=restriction.remediation(),
+            )
+
+        if family is None or not self.quotas:
+            # No quota data collected: say so rather than implying a clean bill.
+            return Deployability(
+                deployable=True,
+                reason=(
+                    f"no access restriction on {sku} in {region}; quota not checked"
+                    if not self.quotas
+                    else f"no access restriction on {sku} in {region}"
+                ),
+            )
+
+        entry = self.quota_for(family, region)
+        if entry is None:
+            return Deployability(
+                deployable=True,
+                reason=f"no access restriction on {sku} in {region}; no quota entry for {family}",
+            )
+
+        required = vcpus_required if vcpus_required is not None else 1
+        if entry.covers(required):
+            return Deployability(
+                deployable=True,
+                reason=f"{entry.available} vCPUs available in {family}",
+                quota_available=entry.available,
+                quota_required=required,
+            )
+
+        return Deployability(
+            deployable=False,
+            reason=(
+                f"quota for {entry.display_name} in {region} is {entry.limit} "
+                f"({entry.available} available, {required} needed)"
+            ),
+            remediation=Remediation(
+                kind=RemediationKind.QUOTA_INCREASE,
+                detail=(
+                    f"{sku} is available and unrestricted in {region}, but the {entry.display_name} "
+                    f"vCPU quota is {entry.limit}. GPU families in particular default to zero, so "
+                    "this is the usual case rather than an exception."
+                ),
+                process=(
+                    "Azure portal > Help + support > New support request. Issue type: 'Service and "
+                    "subscription Limit (quotas)'; Quota type: 'Compute-VM (cores-vCPUs) "
+                    "subscription limit increases'. Select the region and VM series, and state the "
+                    "new vCPU limit."
+                ),
+                reference=REGION_ACCESS_REFERENCE,
+            ),
+            quota_available=entry.available,
+            quota_required=required,
+        )
 
     def restricted_regions(self) -> set[str]:
         """Regions where at least one SKU is restricted.

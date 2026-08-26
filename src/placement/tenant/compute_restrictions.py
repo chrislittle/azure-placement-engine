@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from placement.tenant import quota as quota_module
 from placement.tenant.model import SkuRestriction, TenantContext
 
 
@@ -59,12 +60,13 @@ def parse_restrictions(payload: dict[str, Any]) -> list[SkuRestriction]:
 def build(
     per_region: dict[str, dict[str, Any]],
     *,
+    usages: dict[str, dict[str, Any]] | None = None,
     subscription_id: str | None = None,
     collected_at: datetime | None = None,
     existing_regions: list[str] | None = None,
     allowed_locations: list[str] | None = None,
 ) -> TenantContext:
-    """Build tenant context from per-region compute SKU payloads."""
+    """Build tenant context from per-region compute SKU payloads and quota."""
     if not per_region:
         raise ExtractError("no compute SKU payloads supplied")
 
@@ -83,11 +85,14 @@ def build(
         (r.sku, r.region, tuple(r.zones), r.reason, r.restriction_type): r for r in restrictions
     }
 
+    quotas, _quota_failures = quota_module.collect(usages or {})
+
     return TenantContext(
         subscription_id=subscription_id,
         collected_at=collected_at or datetime.now(timezone.utc),
         mode="offline",
         sku_restrictions=sorted(unique.values(), key=lambda r: (r.region, r.sku)),
+        quotas=sorted(quotas, key=lambda q: (q.region, q.family)),
         existing_regions=sorted(existing_regions or []),
         allowed_locations=sorted(allowed_locations or []),
     )
