@@ -57,7 +57,11 @@ def test_region_metadata(snapshot):
 def test_zone_mappings_are_logical_to_physical(snapshot):
     zones = snapshot.region("westeurope").zones
     assert [z.logical_zone for z in zones] == ["1", "2", "3"]
-    assert zones[0].physical_zone == "westeurope-az1"
+    assert [z.physical_zone for z in zones] == [
+        "westeurope-az3",
+        "westeurope-az2",
+        "westeurope-az1",
+    ]
 
 
 def test_region_without_zones(snapshot):
@@ -210,3 +214,85 @@ def test_latest_is_chronological(tmp_path, payload):
             regions_ingest.ingest(WorldSnapshot(version=version), payload), root=tmp_path
         )
     assert store.latest(root=tmp_path) == "2026-08-26"
+
+
+# --------------------------------------------------------------------------
+# Internal regions — the trap real ARM output revealed
+# --------------------------------------------------------------------------
+
+
+def test_canary_region_is_not_a_placement_candidate(snapshot):
+    """`eastus2euap` is an internal canary region that reports FOUR availability
+    zones — more than any production region — and category Recommended. Left
+    unfiltered it would outscore every real region and be recommended to a
+    customer. This is the single most important filter in the ingester."""
+    canary = snapshot.region("eastus2euap")
+    assert canary.region_type is RegionType.PHYSICAL
+    assert canary.zone_count == 4
+    assert canary.region_category is RegionCategory.RECOMMENDED
+    assert not canary.is_production
+    assert "eastus2euap" not in {r.name for r in snapshot.placement_candidates()}
+
+
+def test_staging_regions_are_not_placement_candidates(snapshot):
+    """Two different shapes in real output: `*stg` regions are Physical and are
+    caught by the production filter, while `*stage` regions come back Logical
+    and are already excluded as non-placeable."""
+    stg = snapshot.region("eastusstg")
+    assert stg.region_type is RegionType.PHYSICAL
+    assert not stg.is_production
+
+    stage = snapshot.region("centralusstage")
+    assert stage.region_type is RegionType.LOGICAL
+    assert not stage.is_production
+
+    candidates = {r.name for r in snapshot.placement_candidates()}
+    assert "eastusstg" not in candidates
+    assert "centralusstage" not in candidates
+
+
+def test_internal_regions_are_marked_not_dropped(snapshot):
+    """The snapshot stays a faithful record of what ARM returned; the engine
+    does the excluding, and can show what it excluded."""
+    internal = {r.name for r in snapshot.internal_regions()}
+    assert internal == {"eastus2euap", "eastusstg"}
+    assert internal <= set(snapshot.regions)
+
+
+def test_zone_helpers_never_return_internal_regions(snapshot):
+    """`with_zones` is the minimum-AZ filter. The four-zone canary must not
+    survive it."""
+    assert "eastus2euap" not in {r.name for r in snapshot.with_zones(3)}
+    assert "eastus2euap" not in {r.name for r in snapshot.in_geography_group("US")}
+
+
+# --------------------------------------------------------------------------
+# Residency geography semantics
+# --------------------------------------------------------------------------
+
+
+def test_geography_is_the_residency_boundary_not_the_country(snapshot):
+    """Observed in real ARM output: westeurope's geography is 'Europe', not
+    'Netherlands'. Azure commits residency at the geography, so a country
+    requirement filtered on physical_location would promise more than Microsoft
+    does."""
+    we = snapshot.region("westeurope")
+    assert we.geography == "Europe"
+    assert we.physical_location == "Netherlands"
+
+    assert snapshot.region("germanywestcentral").geography == "Germany"
+
+
+def test_in_geography_selects_the_residency_set(snapshot):
+    """A 'must stay in Germany' requirement resolves to the German geography —
+    which includes germanynorth, a region with no availability zones."""
+    german = {r.name for r in snapshot.in_geography("Germany")}
+    assert german == {"germanywestcentral", "germanynorth"}
+    assert snapshot.region("germanynorth").zone_count == 0
+
+
+def test_logical_zone_one_is_not_physical_zone_one(snapshot):
+    """Logical-to-physical mapping is per-subscription and genuinely not the
+    identity — real output maps westeurope logical 1 to physical az3."""
+    zones = {z.logical_zone: z.physical_zone for z in snapshot.region("westeurope").zones}
+    assert zones["1"] == "westeurope-az3"

@@ -71,12 +71,25 @@ class RegionCategory(str, Enum):
 class ZoneMapping(Frozen):
     """Logical-to-physical zone mapping.
 
-    Logical zone '1' is not the same datacentre for two different subscriptions,
-    which matters for any question about co-locating across tenants.
+    Logical zone '1' is not the same datacentre for two different subscriptions.
+    Observed in real ARM output: for `westeurope`, logical zone 1 maps to
+    physical `westeurope-az3`. Anything reasoning about co-location across
+    tenants has to use the physical zone, not the logical one.
     """
 
     logical_zone: str
     physical_zone: str
+
+
+#: Suffixes Microsoft uses for internal canary and staging regions. These come
+#: back from the ARM locations API looking like ordinary regions -- `eastus2euap`
+#: even reports four availability zones, more than any production region -- so
+#: without this they would score well and be recommended to a customer.
+INTERNAL_REGION_SUFFIXES = ("stage", "stg", "euap")
+
+#: Geography values that only ever appear on those internal regions. A secondary
+#: check; the suffixes above are the primary signal.
+INTERNAL_GEOGRAPHIES = frozenset({"Canary (US)", "Stage (US)", "usa", "asia"})
 
 
 class Region(Frozen):
@@ -86,9 +99,26 @@ class Region(Frozen):
     region_type: RegionType = RegionType.PHYSICAL
     region_category: RegionCategory = RegionCategory.OTHER
 
-    geography: str | None = Field(default=None, description="e.g. 'Germany'.")
-    geography_group: str | None = Field(default=None, description="e.g. 'Europe'.")
-    physical_location: str | None = Field(default=None, description="e.g. 'Frankfurt'.")
+    geography: str | None = Field(
+        default=None,
+        description=(
+            "Azure's data-residency geography — the boundary Microsoft actually commits to, and "
+            "therefore the correct field for a residency hard filter. Its granularity varies by "
+            "design: 'Germany' for germanywestcentral, but 'Europe' for westeurope, whose residency "
+            "commitment genuinely is Europe-wide."
+        ),
+    )
+    geography_group: str | None = Field(
+        default=None, description="Coarser grouping, e.g. 'Europe', 'US', 'Asia Pacific'."
+    )
+    physical_location: str | None = Field(
+        default=None,
+        description=(
+            "Where the datacentres actually are, e.g. 'Netherlands', 'Frankfurt'. **Informational "
+            "only.** Azure's residency commitment is at `geography`, so filtering a country "
+            "requirement on this field would promise something Microsoft does not."
+        ),
+    )
     latitude: float | None = None
     longitude: float | None = None
 
@@ -112,6 +142,23 @@ class Region(Frozen):
     @property
     def is_paired(self) -> bool:
         return len(self.paired_regions) > 0
+
+    @property
+    def is_production(self) -> bool:
+        """False for Microsoft's internal canary and staging regions.
+
+        They are returned by the ARM locations API indistinguishably from real
+        ones and are never valid placement targets. Marked rather than dropped,
+        so the snapshot stays a faithful record of what ARM returned and the
+        engine does the excluding.
+        """
+        if self.geography in INTERNAL_GEOGRAPHIES:
+            return False
+        return not self.name.endswith(INTERNAL_REGION_SUFFIXES)
+
+    @property
+    def is_placement_candidate(self) -> bool:
+        return self.region_type is RegionType.PHYSICAL and self.is_production
 
 
 # --------------------------------------------------------------------------
@@ -146,11 +193,28 @@ class WorldSnapshot(BaseModel):
         """Logical regions (e.g. 'global') are not placement targets."""
         return [r for r in self.regions.values() if r.region_type is RegionType.PHYSICAL]
 
+    def placement_candidates(self) -> list[Region]:
+        """The only region set the engine may ever recommend from.
+
+        Physical *and* production. Use this rather than `physical_regions()`
+        anywhere a recommendation could reach a customer.
+        """
+        return [r for r in self.regions.values() if r.is_placement_candidate]
+
+    def internal_regions(self) -> list[Region]:
+        """Canary and staging regions, kept for transparency about what was excluded."""
+        return [r for r in self.physical_regions() if not r.is_production]
+
     def in_geography_group(self, group: str) -> list[Region]:
-        return [r for r in self.physical_regions() if r.geography_group == group]
+        return [r for r in self.placement_candidates() if r.geography_group == group]
+
+    def in_geography(self, geography: str) -> list[Region]:
+        """Regions inside one Azure data-residency geography — the correct basis
+        for a residency hard filter."""
+        return [r for r in self.placement_candidates() if r.geography == geography]
 
     def with_zones(self, minimum: int = 3) -> list[Region]:
-        return [r for r in self.physical_regions() if r.zone_count >= minimum]
+        return [r for r in self.placement_candidates() if r.zone_count >= minimum]
 
     def has(self, source: str) -> bool:
         """Whether a given slice has been ingested. The engine uses this to warn

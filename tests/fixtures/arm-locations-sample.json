@@ -1,5 +1,5 @@
 {
-  "_fixture_note": "Illustrative TEST FIXTURE shaped like an ARM locations response (api-version 2022-12-01). Trimmed to a handful of regions chosen to exercise every parser branch: Recommended and Other categories, regions with and without availability zones, paired and unpaired regions, and a logical region. NOT a snapshot and not authoritative - build a real snapshot with `ape snapshot build`.",
+  "_fixture_note": "Illustrative TEST FIXTURE shaped like a real ARM locations response (api-version 2022-12-01), trimmed to exercise every parser branch: Recommended and Other categories, regions with and without availability zones, paired and unpaired regions, a logical region, and Microsoft's internal canary/staging regions. Field values follow the semantics observed in real output - notably metadata.geography is the residency geography ('Europe' for westeurope), not the country, and logical zone 1 does not map to physical az1. NOT a snapshot and not authoritative - build a real one with `ape snapshot build`.",
   "value": [
     {
       "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/eastus",
@@ -23,9 +23,18 @@
         ]
       },
       "availabilityZoneMappings": [
-        { "logicalZone": "1", "physicalZone": "eastus-az1" },
-        { "logicalZone": "2", "physicalZone": "eastus-az2" },
-        { "logicalZone": "3", "physicalZone": "eastus-az3" }
+        {
+          "logicalZone": "1",
+          "physicalZone": "eastus-az1"
+        },
+        {
+          "logicalZone": "2",
+          "physicalZone": "eastus-az2"
+        },
+        {
+          "logicalZone": "3",
+          "physicalZone": "eastus-az3"
+        }
       ]
     },
     {
@@ -59,7 +68,7 @@
       "metadata": {
         "regionType": "Physical",
         "regionCategory": "Recommended",
-        "geography": "Netherlands",
+        "geography": "Europe",
         "geographyGroup": "Europe",
         "longitude": "4.9",
         "latitude": "52.3667",
@@ -72,9 +81,18 @@
         ]
       },
       "availabilityZoneMappings": [
-        { "logicalZone": "1", "physicalZone": "westeurope-az1" },
-        { "logicalZone": "2", "physicalZone": "westeurope-az2" },
-        { "logicalZone": "3", "physicalZone": "westeurope-az3" }
+        {
+          "logicalZone": "1",
+          "physicalZone": "westeurope-az3"
+        },
+        {
+          "logicalZone": "2",
+          "physicalZone": "westeurope-az2"
+        },
+        {
+          "logicalZone": "3",
+          "physicalZone": "westeurope-az1"
+        }
       ]
     },
     {
@@ -86,7 +104,7 @@
       "metadata": {
         "regionType": "Physical",
         "regionCategory": "Recommended",
-        "geography": "Ireland",
+        "geography": "Europe",
         "geographyGroup": "Europe",
         "longitude": "-6.2597",
         "latitude": "53.3478",
@@ -99,9 +117,18 @@
         ]
       },
       "availabilityZoneMappings": [
-        { "logicalZone": "1", "physicalZone": "northeurope-az1" },
-        { "logicalZone": "2", "physicalZone": "northeurope-az2" },
-        { "logicalZone": "3", "physicalZone": "northeurope-az3" }
+        {
+          "logicalZone": "1",
+          "physicalZone": "northeurope-az1"
+        },
+        {
+          "logicalZone": "2",
+          "physicalZone": "northeurope-az2"
+        },
+        {
+          "logicalZone": "3",
+          "physicalZone": "northeurope-az3"
+        }
       ]
     },
     {
@@ -117,7 +144,7 @@
         "geographyGroup": "Europe",
         "longitude": "17.14127",
         "latitude": "60.67488",
-        "physicalLocation": "Gävle",
+        "physicalLocation": "G\u00e4vle",
         "pairedRegion": [
           {
             "name": "swedensouth",
@@ -126,9 +153,18 @@
         ]
       },
       "availabilityZoneMappings": [
-        { "logicalZone": "1", "physicalZone": "swedencentral-az1" },
-        { "logicalZone": "2", "physicalZone": "swedencentral-az2" },
-        { "logicalZone": "3", "physicalZone": "swedencentral-az3" }
+        {
+          "logicalZone": "1",
+          "physicalZone": "swedencentral-az1"
+        },
+        {
+          "logicalZone": "2",
+          "physicalZone": "swedencentral-az2"
+        },
+        {
+          "logicalZone": "3",
+          "physicalZone": "swedencentral-az3"
+        }
       ]
     },
     {
@@ -153,9 +189,18 @@
         ]
       },
       "availabilityZoneMappings": [
-        { "logicalZone": "1", "physicalZone": "germanywestcentral-az1" },
-        { "logicalZone": "2", "physicalZone": "germanywestcentral-az2" },
-        { "logicalZone": "3", "physicalZone": "germanywestcentral-az3" }
+        {
+          "logicalZone": "1",
+          "physicalZone": "germanywestcentral-az1"
+        },
+        {
+          "logicalZone": "2",
+          "physicalZone": "germanywestcentral-az2"
+        },
+        {
+          "logicalZone": "3",
+          "physicalZone": "germanywestcentral-az3"
+        }
       ]
     },
     {
@@ -197,9 +242,18 @@
         "pairedRegion": []
       },
       "availabilityZoneMappings": [
-        { "logicalZone": "1", "physicalZone": "italynorth-az1" },
-        { "logicalZone": "2", "physicalZone": "italynorth-az2" },
-        { "logicalZone": "3", "physicalZone": "italynorth-az3" }
+        {
+          "logicalZone": "1",
+          "physicalZone": "italynorth-az1"
+        },
+        {
+          "logicalZone": "2",
+          "physicalZone": "italynorth-az2"
+        },
+        {
+          "logicalZone": "3",
+          "physicalZone": "italynorth-az3"
+        }
       ]
     },
     {
@@ -211,6 +265,68 @@
       "metadata": {
         "regionType": "Logical",
         "regionCategory": "Other"
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/eastus2euap",
+      "name": "eastus2euap",
+      "type": "Region",
+      "displayName": "East US 2 EUAP",
+      "regionalDisplayName": "(US) East US 2 EUAP",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Recommended",
+        "geography": "Canary (US)",
+        "geographyGroup": "US",
+        "longitude": "-78.3889",
+        "latitude": "36.6681",
+        "pairedRegion": []
+      },
+      "availabilityZoneMappings": [
+        {
+          "logicalZone": "1",
+          "physicalZone": "eastus2euap-az1"
+        },
+        {
+          "logicalZone": "2",
+          "physicalZone": "eastus2euap-az2"
+        },
+        {
+          "logicalZone": "3",
+          "physicalZone": "eastus2euap-az3"
+        },
+        {
+          "logicalZone": "4",
+          "physicalZone": "eastus2euap-az4"
+        }
+      ]
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/centralusstage",
+      "name": "centralusstage",
+      "type": "Region",
+      "displayName": "Central US (Stage)",
+      "regionalDisplayName": "(US) Central US (Stage)",
+      "metadata": {
+        "regionType": "Logical",
+        "regionCategory": "Other",
+        "geography": "usa",
+        "geographyGroup": "US",
+        "pairedRegion": []
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/eastusstg",
+      "name": "eastusstg",
+      "type": "Region",
+      "displayName": "East US STG",
+      "regionalDisplayName": "(US) East US STG",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Other",
+        "geography": "Stage (US)",
+        "geographyGroup": "US",
+        "pairedRegion": []
       }
     }
   ]

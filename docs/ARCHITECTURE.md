@@ -152,6 +152,42 @@ reproducibility guarantee, not a cache.
 | Residency boundaries, sovereign clouds | EU Data Boundary docs, cloud endpoint metadata | Curated |
 | Compliance certification scope | Trust Center — **service-scoped, not only region-scoped** | Curated |
 
+### What the first real ingest changed
+
+Running ingester #1 against a live subscription (109 locations, 63 physical)
+corrected three things that a fixture built from assumption had wrong. Recorded
+here because each is a trap the next ingester could fall into too.
+
+**Internal regions come back looking like real ones.** `eastus2euap` is
+`Physical`, category `Recommended`, and reports **four availability zones** —
+more than any production region. Unfiltered, it would have outscored every real
+region and been recommended to a customer. Two shapes exist: `*euap` and `*stg`
+are `Physical` and need an explicit production filter, while `*stage` regions
+come back `Logical` and are already excluded. Hence `placement_candidates()`,
+which is the only region set the engine may ever recommend from. Internal regions
+are *marked, not dropped* — the snapshot stays a faithful record of what ARM
+returned, and the CLI reports what it excluded on every build.
+
+**`geography` is the residency boundary, not the country.** `westeurope` reports
+`geography: "Europe"` and `physicalLocation: "Netherlands"`. That is not a data
+quirk — Azure's residency commitment genuinely is Europe-wide for that region,
+while `germanywestcentral` reports `geography: "Germany"`. So residency filters
+must use `geography`; filtering a country requirement on `physicalLocation` would
+promise something Microsoft does not commit to.
+
+**Most new European regions have no paired region at all** — `austriaeast`,
+`belgiumcentral`, `denmarkeast`, `italynorth`, `polandcentral`, `spaincentral`.
+Had `require_paired_region` defaulted on, the engine would have silently
+eliminated six modern EU regions. Direct confirmation of CAF's shift away from
+mandatory pairing, and of the decision to default it off.
+
+One consequence worth flagging early, visible in the data before the solver
+exists: the `eu-residency` scenario asks to stay in Germany with three
+availability zones and a four-hour RTO. The German geography contains exactly two
+regions, and `germanynorth` has **no availability zones**. There is no in-country
+secondary that satisfies the constraints — which is precisely the case
+`relaxations` exists to answer rather than returning "infeasible".
+
 ### Tenant context — customer-specific
 
 Two collection modes, same schema. **Offline** (default) is a JSON export —

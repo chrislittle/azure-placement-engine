@@ -9,7 +9,6 @@ requirements file. The placement command itself lands with the solver.
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from rich.table import Table
 from placement import __version__
 from placement.contracts import load_requirements
 from placement.snapshot import store
+from placement.snapshot.ingest import PayloadError, read_payload
 from placement.snapshot.ingest import regions as regions_ingest
 from placement.snapshot.model import WorldSnapshot
 
@@ -72,7 +72,13 @@ def snapshot_build(
     version_id = snapshot_version or date.today().isoformat()
 
     if from_file:
-        payload = json.loads(from_file.read_text(encoding="utf-8"))
+        try:
+            payload, encoding = read_payload(from_file)
+        except PayloadError as exc:
+            err.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1) from exc
+        if encoding not in ("utf-8", "utf-8-sig"):
+            console.print(f"[yellow]Note:[/yellow] read {from_file.name} as {encoding}, not UTF-8.")
     else:
         payload = regions_ingest.fetch_locations(subscription)  # type: ignore[arg-type]
 
@@ -84,14 +90,24 @@ def snapshot_build(
     snapshot = regions_ingest.ingest(existing, payload, subscription_id=subscription)
     path = store.save(snapshot)
 
-    physical = snapshot.physical_regions()
-    zoned = [r for r in physical if r.zone_count >= 3]
+    candidates = snapshot.placement_candidates()
+    internal = snapshot.internal_regions()
+
     console.print(
         f"[green]Wrote[/green] {path.relative_to(store.repo_root())}\n"
-        f"  {len(snapshot.regions)} locations ({len(physical)} physical, "
-        f"{len(zoned)} with 3+ availability zones)\n"
+        f"  {len(snapshot.regions)} locations returned, "
+        f"{len(snapshot.physical_regions())} physical\n"
+        f"  [bold]{len(candidates)} placement candidates[/bold], "
+        f"{len(snapshot.with_zones(3))} with 3+ availability zones\n"
         f"  digest {snapshot.digest()}"
     )
+    if internal:
+        # Worth surfacing every time: these look like ordinary regions in the
+        # API, and eastus2euap reports more zones than any production region.
+        console.print(
+            f"  [yellow]{len(internal)} internal canary/staging regions excluded:[/yellow] "
+            + ", ".join(sorted(r.name for r in internal))
+        )
 
 
 @snapshot_app.command("list")
@@ -119,7 +135,7 @@ def snapshot_show(
         err.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
 
-    rows = snapshot.physical_regions()
+    rows = snapshot.placement_candidates()
     if geography_group:
         rows = [r for r in rows if r.geography_group == geography_group]
     rows.sort(key=lambda r: (r.geography_group or "", r.name))
