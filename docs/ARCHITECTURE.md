@@ -407,6 +407,41 @@ And when nothing fits, the record carries **relaxations** rather than an error:
 else fits in germanywestcentral."* That is what flow criticality buys, and it is
 the difference between advice and an error message.
 
+### What the VM SKU ingest made answerable
+
+`Microsoft.Compute/skus` is the largest source by far — ~230 MB unfiltered, ~4.8 MB
+and 1300 SKUs per region — so it is collected per region and projected hard.
+199 MB of payloads become 3.6 MB of snapshot: 1477 SKUs, of which 51 carry
+accelerators and 40 are RDMA-capable.
+
+**SKU zones are much finer than region zones, and the difference is decisive.**
+`Standard_ND96isr_H100_v5` is offered in `swedencentral` zone 1 only,
+`westeurope` zone 3 only, `italynorth` zone 2 only. All three are three-zone
+regions. Any zone-redundant design for that SKU is impossible in them, and the
+region-level zone count hides that completely.
+
+**The same payload feeds both planes, and splitting it is what makes the answer
+useful.** SKU identity, capabilities and zones are world facts. `restrictions[]`
+— 6179 entries across 48 regions on the test subscription, every one
+`NotAvailableForSubscription` — describes what *this* subscription may deploy, so
+it goes to tenant context. For the GPU scenario, in Europe:
+
+| | Regions |
+|---|---|
+| Offer the H100 SKU | `italynorth`, `norwayeast`, `polandcentral`, `swedencentral`, `westeurope` |
+| Deployable on this subscription today | `italynorth`, `norwayeast` |
+| A support request away | `polandcentral`, `swedencentral`, `westeurope` |
+
+Neither plane alone gives a usable answer. The world snapshot says five regions
+and would send the customer at a deployment that fails. Tenant context alone says
+two and would send them to a worse region than they could have had. **The
+recommendation is two, with three named as requestable** — and that only exists
+because the two planes are kept apart and then compared.
+
+The restriction ratio also identifies access-restricted regions without a curated
+list: `uaecentral` 59%, `brazilsoutheast` 48%, `jioindiacentral` 47%, against
+under 10% for ordinary regions.
+
 ### Not every elimination is final
 
 Azure region and zonal access are **not open by default**. A number of regions

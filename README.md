@@ -43,9 +43,10 @@ Early. Contracts, scenarios, and the first ingester are in; the solver is not.
 - [x] Ingester 1 — region metadata from the ARM `locations` API
 - [x] Ingester 2 — service availability by region, from ARM provider metadata
 - [x] Ingester 3 — capability level (region zones, Storage SKUs, Postgres per-region flags)
-- [ ] Ingester 4 — VM SKUs from `Microsoft.Compute/skus`
+- [x] Ingester 4 — VM SKUs from `Microsoft.Compute/skus` (projected per region)
+- [x] Tenant context — SKU restrictions as remediation signal
 - [ ] Ingester 5 — retail pricing
-- [ ] Tenant context collectors (offline / live)
+- [ ] Tenant context — policy `allowedLocations`, quota, existing footprint
 - [ ] Constraint solver, topology composition, scoring
 
 ## Use
@@ -98,7 +99,7 @@ fails loudly instead of silently making old decision records unreproducible.
 |---|---|
 | `src/placement/contracts/` | Input and output schemas — the stable surface |
 | `src/placement/snapshot/` | World snapshot model, store, and ingesters |
-| `src/placement/tenant/` | Customer landing-zone context collectors |
+| `src/placement/tenant/` | What this subscription can reach — never committed |
 | `src/placement/engine/` | Resolve, constrain, compose, score |
 | `src/placement/emit/` | Reports, Azure Policy, IaC parameters |
 | `scenarios/` | Acceptance fixtures — the four constraint families |

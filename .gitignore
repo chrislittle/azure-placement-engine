@@ -8,8 +8,9 @@ build/
 .pytest_cache/
 .ruff_cache/
 
-# Local tenant context may contain customer identifiers — never commit by default.
+# Tenant context names a subscription and describes an estate. Never commit it.
 tenant/*.json
+*tenant-context*.json
 !tenant/example*.json
 
 # Raw ingest cache; snapshots under snapshots/ ARE committed (they are the pinned truth).

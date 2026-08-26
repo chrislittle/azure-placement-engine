@@ -203,6 +203,55 @@ class ServiceAvailability(Frozen):
 
 
 # --------------------------------------------------------------------------
+# VM SKUs
+# --------------------------------------------------------------------------
+
+
+class VmSku(Frozen):
+    """One VM SKU, projected down from `Microsoft.Compute/skus`.
+
+    The source response is ~230 MB unfiltered and carries dozens of capability
+    fields per SKU. Only what a placement decision uses is kept.
+    """
+
+    name: str = Field(description="e.g. 'Standard_ND96isr_H100_v5'.")
+    family: str = Field(default="", description="e.g. 'standardNDSH100v5Family'.")
+    tier: str | None = None
+    size: str | None = None
+
+    vcpus: int | None = None
+    memory_gb: float | None = None
+    gpus: int | None = None
+    rdma: bool = Field(default=False, description="RDMA/InfiniBand capable.")
+    confidential_computing: str | None = Field(
+        default=None, description="Confidential computing type, when the SKU supports it."
+    )
+    premium_io: bool = False
+    cpu_architecture: str | None = None
+    encryption_at_host: bool = False
+
+    zones_by_region: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Region -> the zones this SKU is offered in. Finer than the region's own zone count: a "
+            "three-zone region may offer a given SKU in only one zone, and a zonal deployment "
+            "depends on the SKU's zones, not the region's."
+        ),
+    )
+
+    @property
+    def regions(self) -> set[str]:
+        return set(self.zones_by_region)
+
+    def zones_in(self, region: str) -> list[str]:
+        return self.zones_by_region.get(region, [])
+
+    @property
+    def is_accelerated(self) -> bool:
+        return bool(self.gpus)
+
+
+# --------------------------------------------------------------------------
 # Capabilities
 # --------------------------------------------------------------------------
 
@@ -258,6 +307,9 @@ class WorldSnapshot(BaseModel):
     capabilities: dict[str, CapabilityFact] = Field(
         default_factory=dict, description="Keyed by '<resource type>::<capability>', lowercased."
     )
+    vm_skus: dict[str, VmSku] = Field(
+        default_factory=dict, description="Keyed by SKU name, e.g. 'Standard_D8s_v5'."
+    )
     sources: dict[str, SourceRef] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -309,6 +361,32 @@ class WorldSnapshot(BaseModel):
         if fact is None:
             return None
         return region in fact.regions
+
+    def vm_sku(self, name: str) -> VmSku | None:
+        """SKU names are case-insensitive in practice and typed from memory."""
+        if name in self.vm_skus:
+            return self.vm_skus[name]
+        lowered = name.lower()
+        for sku_name, sku in self.vm_skus.items():
+            if sku_name.lower() == lowered:
+                return sku
+        return None
+
+    def sku_available(self, name: str, region: str) -> bool | None:
+        """Whether a named VM SKU is offered in a region.
+
+        None when the SKU slice has not been ingested at all - unknown, not
+        unavailable. Once ingested, an unrecognised SKU name is False, since the
+        slice enumerates every SKU the queried regions offer.
+        """
+        if not self.vm_skus:
+            return None
+        sku = self.vm_sku(name)
+        return bool(sku and region in sku.zones_by_region)
+
+    def regions_for_sku(self, name: str) -> set[str]:
+        sku = self.vm_sku(name)
+        return sku.regions if sku else set()
 
     def known_capabilities(self, resource_type: str) -> set[str]:
         prefix = f"{resource_type.lower()}::"

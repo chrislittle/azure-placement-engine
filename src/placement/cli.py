@@ -21,9 +21,11 @@ from placement.contracts import load_requirements
 from placement.snapshot import store
 from placement.snapshot.ingest import PayloadError, read_payload
 from placement.snapshot.ingest import capabilities as capabilities_ingest
+from placement.snapshot.ingest import compute_skus as compute_ingest
 from placement.snapshot.ingest import regions as regions_ingest
 from placement.snapshot.ingest import services as services_ingest
 from placement.snapshot.model import WorldSnapshot
+from placement.tenant import compute_restrictions
 
 app = typer.Typer(help="Azure Placement Engine", no_args_is_help=True, add_completion=False)
 snapshot_app = typer.Typer(help="Build and inspect pinned world snapshots.", no_args_is_help=True)
@@ -56,6 +58,13 @@ Postgres capabilities are per region, so collect them into a directory:
   [cyan]mkdir -p pg
   for R in $(ape snapshot regions); do
     az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.DBforPostgreSQL/locations/$R/capabilities?api-version=2024-08-01" > "pg/$R.json"
+  done[/cyan]
+
+VM SKUs are also per region, and large (~4.8 MB each):
+
+  [cyan]mkdir -p compute
+  for R in $(ape snapshot regions); do
+    az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Compute/skus?api-version=2021-07-01&\$filter=location eq '$R'" > "compute/$R.json"
   done[/cyan]
 """
 
@@ -93,6 +102,19 @@ def snapshot_build(
         file_okay=False,
         help="A directory of <region>.json Postgres capability responses, one per region.",
     ),
+    compute_dir: Path | None = typer.Option(
+        None,
+        "--compute-dir",
+        exists=True,
+        file_okay=False,
+        help="A directory of <region>.json Microsoft.Compute/skus responses, one per region.",
+    ),
+    tenant_out: Path | None = typer.Option(
+        None,
+        "--tenant-out",
+        dir_okay=False,
+        help="Write subscription-specific SKU restrictions here as tenant context. Never committed.",
+    ),
     subscription: str | None = typer.Option(
         None, "--subscription", "-s", help="Fetch live from ARM using the ambient Azure credential."
     ),
@@ -106,7 +128,7 @@ def snapshot_build(
     must land before services, since resolving provider metadata needs the region
     table to join against.
     """
-    if not any((locations, providers, storage_skus, postgres_dir, subscription)):
+    if not any((locations, providers, storage_skus, postgres_dir, compute_dir, subscription)):
         err.print("[red]Provide --subscription, or one or more offline payloads.[/red]\n")
         err.print(COLLECT_HELP)
         raise typer.Exit(2)
@@ -164,6 +186,29 @@ def snapshot_build(
             err.print(f"[red]{exc}[/red]")
             raise typer.Exit(1) from exc
 
+    if compute_dir:
+        payloads = {p.stem: _load(p) for p in sorted(compute_dir.glob("*.json"))}
+        try:
+            snapshot = compute_ingest.ingest(snapshot, payloads, subscription_id=subscription)
+            snapshot = compute_ingest.derive_capabilities(snapshot)
+        except compute_ingest.IngestError as exc:
+            err.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1) from exc
+
+        if tenant_out:
+            # Same payload, different destination: SKUs and zones are world facts,
+            # restrictions describe what this subscription may deploy.
+            context = compute_restrictions.build(payloads, subscription_id=subscription)
+            tenant_out.parent.mkdir(parents=True, exist_ok=True)
+            tenant_out.write_text(
+                context.model_dump_json(indent=2, exclude_none=True), encoding="utf-8"
+            )
+            console.print(
+                f"[green]Wrote[/green] {tenant_out} "
+                f"({len(context.sku_restrictions)} SKU restrictions across "
+                f"{len(context.restricted_regions())} regions)"
+            )
+
     if snapshot.regions:
         # Derived from the region table, so it costs nothing and always refreshes.
         snapshot = capabilities_ingest.ingest_region_capabilities(snapshot)
@@ -195,12 +240,22 @@ def snapshot_build(
             f"{len(regional)} with a regional footprint"
         )
 
+    if snapshot.vm_skus:
+        accelerated = [s for s in snapshot.vm_skus.values() if s.is_accelerated]
+        rdma = [s for s in snapshot.vm_skus.values() if s.rdma]
+        console.print(
+            f"  [bold]{len(snapshot.vm_skus)} VM SKUs[/bold], "
+            f"{len(accelerated)} with accelerators, {len(rdma)} RDMA-capable"
+        )
+
     if snapshot.capabilities:
         console.print(f"  [bold]{len(snapshot.capabilities)} capability facts[/bold]")
         for key in sorted(snapshot.capabilities):
             fact = snapshot.capabilities[key]
+            scope = fact.resource_type.split("/")[-1] if "/" in fact.resource_type else "any service"
             console.print(
-                f"    {fact.capability:24s} {len(fact.regions):3d} regions  [dim]{fact.source}[/dim]"
+                f"    {fact.capability:24s} {len(fact.regions):3d} regions  "
+                f"[dim]{scope} <- {fact.source}[/dim]"
             )
 
     console.print(f"  digest {snapshot.digest()}")
@@ -215,6 +270,23 @@ def snapshot_list() -> None:
         raise typer.Exit(0)
     for v in versions:
         console.print(v)
+
+
+@snapshot_app.command("regions")
+def snapshot_regions(
+    snapshot_version: str = typer.Argument(None, help="Defaults to the newest snapshot."),
+) -> None:
+    """Print placement-candidate region names, one per line.
+
+    Intended for shell loops that collect per-region payloads.
+    """
+    try:
+        snapshot = store.load(snapshot_version or store.latest())
+    except store.SnapshotError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    for region in sorted(r.name for r in snapshot.placement_candidates()):
+        print(region)
 
 
 @snapshot_app.command("show")

@@ -41,3 +41,14 @@ def test_snapshot_build_requires_a_source():
     result = runner.invoke(app, ["snapshot", "build"])
     assert result.exit_code == 2
     assert "--subscription" in result.output
+
+
+def test_snapshot_build_accepts_compute_dir_alone(tmp_path):
+    """Every input path must be reachable on its own - slices are additive, so
+    --compute-dir without the others has to be a valid invocation."""
+    empty = tmp_path / "compute"
+    empty.mkdir()
+    result = runner.invoke(app, ["snapshot", "build", "--compute-dir", str(empty)])
+    # Reaches the ingester (and fails there for lack of payloads) rather than
+    # being rejected as "no input provided".
+    assert result.exit_code != 2, result.output
