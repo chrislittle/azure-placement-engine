@@ -2,6 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DecisionRecord",
   "$defs": {
+    "AdjustmentTier": {
+      "description": "How much friction a remediation actually carries.\n\n\"Needs a quota increase\" spans an enormous range in practice. For some\nproviders it is a `Microsoft.Quota` PUT \u2014 programmatic, immediate, no human.\nFor others it is a portal flow, and for others a support ticket with\nengineering review and days of lead time. A recommendation that treats those\nas the same thing is misleading about the only question that matters to a\nlaunch date.",
+      "enum": [
+        "self-service",
+        "portal",
+        "support-ticket",
+        "not-adjustable",
+        "unknown"
+      ],
+      "title": "AdjustmentTier",
+      "type": "string"
+    },
     "Candidate": {
       "additionalProperties": false,
       "description": "A complete, viable topology \u2014 never a bare region.\n\nRecovery requirements make the unit of answer a region *set*: a workload with\na five-minute-RTO flow has no meaningful single-region answer.",
@@ -522,6 +534,11 @@
           "title": "Detail",
           "type": "string"
         },
+        "tier": {
+          "$ref": "#/$defs/AdjustmentTier",
+          "default": "unknown",
+          "description": "How much friction the action carries \u2014 self-service through support ticket."
+        },
         "process": {
           "anyOf": [
             {
@@ -560,6 +577,19 @@
           "default": null,
           "description": "Rough turnaround, when known. Requests are reviewed by engineering, so this is planning information, not a guarantee.",
           "title": "Lead Time"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Routing caveats, e.g. zonal asks that must go elsewhere.",
+          "title": "Note"
         }
       },
       "required": [

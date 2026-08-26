@@ -57,6 +57,47 @@ def parse_restrictions(payload: dict[str, Any]) -> list[SkuRestriction]:
     return found
 
 
+def parse_reservation_support(payload: dict[str, Any]) -> tuple[str | None, list[str]]:
+    """SKUs that cannot be capacity-reserved, per region.
+
+    `CapacityReservationSupported` is subscription x region scoped, so it belongs
+    here rather than in the world snapshot. Keyed off that field and not
+    `SupportedCapacityReservationTypes`, which is a static series property that
+    reads the same on every subscription and overstates what is reservable.
+    """
+    if not isinstance(payload, dict) or "value" not in payload:
+        raise ExtractError("expected a Microsoft.Compute/skus response with a `value` array")
+
+    region: str | None = None
+    unsupported: list[str] = []
+
+    for entry in payload["value"]:
+        if not isinstance(entry, dict) or entry.get("resourceType") != "virtualMachines":
+            continue
+        name = entry.get("name")
+        if not name:
+            continue
+
+        for info in entry.get("locationInfo") or []:
+            if isinstance(info, dict) and info.get("location"):
+                region = str(info["location"]).lower()
+                break
+
+        caps = {
+            c.get("name"): c.get("value")
+            for c in entry.get("capabilities") or []
+            if isinstance(c, dict)
+        }
+        supported = caps.get("CapacityReservationSupported")
+        # Absent means the SKU does not advertise the field at all; treat that as
+        # unsupported rather than assuming, since a false positive here sends
+        # someone at a reservation that fails.
+        if str(supported).strip().lower() != "true":
+            unsupported.append(name)
+
+    return region, sorted(unsupported)
+
+
 def build(
     per_region: dict[str, dict[str, Any]],
     *,
@@ -87,12 +128,21 @@ def build(
 
     quotas, _quota_failures = quota_module.collect(usages or {})
 
+    reservation_unsupported: dict[str, list[str]] = {}
+    for region_key, payload in sorted(per_region.items()):
+        try:
+            region, unsupported = parse_reservation_support(payload)
+        except ExtractError:
+            continue
+        reservation_unsupported[region or region_key] = unsupported
+
     return TenantContext(
         subscription_id=subscription_id,
         collected_at=collected_at or datetime.now(timezone.utc),
         mode="offline",
         sku_restrictions=sorted(unique.values(), key=lambda r: (r.region, r.sku)),
         quotas=sorted(quotas, key=lambda q: (q.region, q.family)),
+        reservation_unsupported=reservation_unsupported,
         existing_regions=sorted(existing_regions or []),
         allowed_locations=sorted(allowed_locations or []),
     )

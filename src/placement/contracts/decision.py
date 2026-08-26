@@ -94,6 +94,43 @@ class RemediationKind(str, Enum):
     UNKNOWN = "unknown"                          # may be requestable; not established
 
 
+class AdjustmentTier(str, Enum):
+    """How much friction a remediation actually carries.
+
+    "Needs a quota increase" spans an enormous range in practice. For some
+    providers it is a `Microsoft.Quota` PUT — programmatic, immediate, no human.
+    For others it is a portal flow, and for others a support ticket with
+    engineering review and days of lead time. A recommendation that treats those
+    as the same thing is misleading about the only question that matters to a
+    launch date.
+    """
+
+    SELF_SERVICE = "self-service"        # Microsoft.Quota PUT; programmatic
+    PORTAL = "portal"                    # portal / quota-management flow
+    SUPPORT_TICKET = "support-ticket"    # human review, real lead time
+    NOT_ADJUSTABLE = "not-adjustable"    # no path; the limit is fixed
+    UNKNOWN = "unknown"
+
+
+#: `Microsoft.Quota` is regional-only — it has no field expressing a per-zone
+#: limit. So a zone-specific vCPU ask cannot use the self-service path even where
+#: the regional equivalent can, and must go via a support ticket naming the zone.
+#: Promising self-service for a zonal ask would be wrong.
+COMPUTE_ZONAL_QUOTA_NOTE = (
+    "Microsoft.Quota is regional-only and cannot express a per-zone limit, so a zone-specific "
+    "vCPU request must go through a support ticket naming the zone, even though the regional "
+    "equivalent is self-service."
+)
+
+#: Where a non-Compute service's zonal need is really about VM capacity in a zone
+#: — AKS node pools, HDInsight workers, VMSS behind App Service Environments —
+#: the quota lives on Microsoft.Compute vCPU families, so the ask routes there
+#: rather than through the wrapping service.
+COMPUTE_BACKED_ZONAL_NOTE = (
+    "Zonal capacity for this service draws on Microsoft.Compute vCPU family quota, so the "
+    "request routes through Compute rather than the wrapping service."
+)
+
 #: The documented process for reserved/restricted-access regions.
 REGION_ACCESS_PROCESS = (
     "Azure portal > Help + support > New support request. Issue type: 'Service and subscription "
@@ -119,6 +156,10 @@ class Remediation(Record):
 
     kind: RemediationKind
     detail: str = Field(description="What specifically is gated.")
+    tier: AdjustmentTier = Field(
+        default=AdjustmentTier.UNKNOWN,
+        description="How much friction the action carries — self-service through support ticket.",
+    )
     process: str | None = Field(default=None, description="How to request it.")
     reference: str | None = Field(default=None, description="Documentation URL for the process.")
     lead_time: str | None = Field(
@@ -126,6 +167,14 @@ class Remediation(Record):
         description="Rough turnaround, when known. Requests are reviewed by engineering, so this "
         "is planning information, not a guarantee.",
     )
+    note: str | None = Field(
+        default=None, description="Routing caveats, e.g. zonal asks that must go elsewhere."
+    )
+
+    @property
+    def is_programmatic(self) -> bool:
+        """True when no human is in the loop — the difference between minutes and days."""
+        return self.tier is AdjustmentTier.SELF_SERVICE
 
 
 class Elimination(Record):

@@ -363,3 +363,87 @@ def test_regional_core_cap_is_kept_and_flagged():
     total = regional_core_limit(entries, "westeurope")
     assert total.limit == 100 and total.available == 80
     assert total.family in REGIONAL_TOTALS
+
+
+# --------------------------------------------------------------------------
+# Adjustment tiers and the capacity-reservation gate
+# --------------------------------------------------------------------------
+
+
+def test_regional_quota_is_self_service_zonal_is_a_ticket():
+    """Microsoft.Quota is regional-only and cannot express a per-zone limit, so a
+    zone-specific vCPU ask is a support ticket even where the regional equivalent
+    is a programmatic PUT. Promising self-service for a zonal ask would be wrong."""
+    from placement.contracts.decision import AdjustmentTier
+
+    context = context_with_quota(**{H100_FAMILY: (0, 0)})
+
+    regional = context.assess(H100, "westeurope", family=H100_FAMILY, vcpus_required=96)
+    assert regional.remediation.tier is AdjustmentTier.SELF_SERVICE
+    assert regional.remediation.is_programmatic
+
+    zonal = context.assess(
+        H100, "westeurope", family=H100_FAMILY, vcpus_required=96, zonal=True
+    )
+    assert zonal.remediation.tier is AdjustmentTier.SUPPORT_TICKET
+    assert not zonal.remediation.is_programmatic
+    assert "regional-only" in zonal.remediation.note
+
+
+def test_access_requests_are_always_tickets():
+    from placement.contracts.decision import AdjustmentTier
+
+    context = compute_restrictions.build({"westeurope": RESTRICTED}, collected_at=AS_OF)
+    remediation = context.restriction_for(H100, "westeurope").remediation()
+    assert remediation.tier is AdjustmentTier.SUPPORT_TICKET
+
+
+def test_offer_type_exclusion_is_not_adjustable():
+    from placement.contracts.decision import AdjustmentTier
+
+    context = compute_restrictions.build({"westeurope": RESTRICTED}, collected_at=AS_OF)
+    remediation = context.restriction_for("Standard_DC8as_v5", "westeurope").remediation()
+    assert remediation.tier is AdjustmentTier.NOT_ADJUSTABLE
+
+
+def reservable(name, supported):
+    return sku(name, caps={"CapacityReservationSupported": supported,
+                           "SupportedCapacityReservationTypes": "Open,Targeted"})
+
+
+def test_capacity_reservation_is_a_third_independent_gate():
+    """A subscription can hold approved quota and still fail to reserve, so
+    reservability is checked off CapacityReservationSupported rather than assumed
+    from quota."""
+    context = compute_restrictions.build(
+        {"westeurope": {"value": [reservable("Standard_A", "True"),
+                                  reservable("Standard_B", "False")]}},
+        collected_at=AS_OF,
+    )
+    assert context.can_reserve("Standard_A", "westeurope") is True
+    assert context.can_reserve("Standard_B", "westeurope") is False
+
+
+def test_reservation_types_field_is_not_used_as_the_signal():
+    """SupportedCapacityReservationTypes is a static series property that reads
+    the same on every subscription and overstates availability."""
+    context = compute_restrictions.build(
+        {"westeurope": {"value": [reservable("Standard_B", "False")]}}, collected_at=AS_OF
+    )
+    # Advertises Open,Targeted yet is not reservable on this subscription.
+    assert context.can_reserve("Standard_B", "westeurope") is False
+
+
+def test_missing_capability_is_treated_as_unreservable():
+    """A false positive here sends someone at a reservation that fails."""
+    context = compute_restrictions.build(
+        {"westeurope": {"value": [sku("Standard_C", caps={})]}}, collected_at=AS_OF
+    )
+    assert context.can_reserve("Standard_C", "westeurope") is False
+
+
+def test_uncollected_region_is_unknown_not_false():
+    context = compute_restrictions.build(
+        {"westeurope": {"value": [reservable("Standard_A", "True")]}}, collected_at=AS_OF
+    )
+    assert context.can_reserve("Standard_A", "italynorth") is None

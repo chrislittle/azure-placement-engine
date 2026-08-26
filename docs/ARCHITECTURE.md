@@ -304,7 +304,8 @@ not committed. **Live** is a read-only ARM collector.
 | Existing footprint (regions, subscriptions, MGs) | Azure Resource Graph |
 | Quota limits and current usage | Quota API / usages |
 | Subscription-specific SKU restrictions | `Microsoft.Compute/skus` `restrictions[]` |
-| Spot placement scores | `Microsoft.Compute/locations/{loc}/placementScores/spot` |
+| Spot placement scores | `Microsoft.Compute/locations/{loc}/placementScores/spot` — **spot pool only**, see below |
+| Capacity reservation support | `CapacityReservationSupported` on `Microsoft.Compute/skus` |
 | Network anchors (ER peering locations, vWAN hubs) | Resource Graph |
 
 ---
@@ -316,7 +317,14 @@ not committed. **Live** is a read-only ARM collector.
 CAF names capacity as a region-selection criterion but there is no Azure API that
 answers *"does swedencentral have room for 64 × ND96isr H100 v5?"* The available
 signals are indirect: SKU `restrictions` (subscription-specific and authoritative
-**for exclusion**), quota headroom, and spot placement scores.
+**for exclusion**), quota headroom, and `CapacityReservationSupported`.
+
+**Spot placement scores are not one of them, and an earlier draft of this document
+was wrong to list them as a general capacity signal.** They describe the *spot*
+pool, which is a different capacity pool from on-demand: a score of "High" has
+been observed for a SKU in a region where an on-demand capacity reservation
+failed outright with `SkuNotAvailable`. They may still be scored for
+`spot_tolerant` workloads; they must never stand in for on-demand capacity.
 
 So capacity splits in two: a **hard elimination where we have proof** — a
 restriction on your subscription is a fact — and a **scored confidence with
@@ -473,6 +481,51 @@ The join between the two APIs needs normalising — the SKU list says
 sides are squeezed and lowercased. That matches 183 of 184 families against live
 data. Regional totals (`cores`, `lowPriorityCores`) are kept but flagged, since a
 per-family quota is meaningless if the regional cap is already exhausted.
+
+### Three gates, and how hard each is to open
+
+Deployability is not one question. It is three independent gates, and a fourth
+concern — *how much friction the remedy carries* — that changes the answer to
+"can we launch on time" more than any of them.
+
+| Gate | Source | Remedy if closed |
+|---|---|---|
+| SKU exists in the region | world snapshot | none |
+| Subscription is not restricted from it | tenant `restrictions[]` | region / zonal access request |
+| Quota exists for the family | tenant `usages` | quota increase |
+| **Capacity can be reserved** | tenant `CapacityReservationSupported` | offer-level; often none |
+
+**"Needs a quota increase" spans an enormous range**, so `Remediation` carries an
+`AdjustmentTier`: `self-service` (a `Microsoft.Quota` PUT — programmatic,
+immediate, no human), `portal`, `support-ticket` (engineering review, real lead
+time), or `not-adjustable`. Reporting those identically misleads on the only
+question a launch date depends on.
+
+Two routing rules follow, and both are easy to get backwards:
+
+- **`Microsoft.Quota` is regional-only.** It has no field expressing a per-zone
+  limit, so a zone-specific vCPU ask is a **support ticket** even where the
+  regional equivalent is a self-service PUT. `assess(..., zonal=True)` flips the
+  tier accordingly. Promising self-service for a zonal ask would be wrong.
+- **Compute-backed services route their zonal ask through Compute.** When AKS
+  node pools, HDInsight workers or VMSS behind an App Service Environment need
+  zonal capacity, the quota lives on `Microsoft.Compute` vCPU families — the
+  request goes there, not to the wrapping service.
+
+**Capacity reservation is a genuinely separate gate**, not a consequence of
+quota. A subscription can hold approved quota and still fail to reserve, so the
+common guidance of "get quota, then reserve" is insufficient. The signal is
+`CapacityReservationSupported` on `Microsoft.Compute/skus` — scoped to
+subscription × region, and therefore tenant context. It must not be confused with
+`SupportedCapacityReservationTypes`, which is a static property of the VM series,
+reads identically on every subscription, and overstates availability. Where the
+field is absent the engine treats the SKU as unreservable, because a false
+positive here sends someone at a reservation that fails.
+
+> Sourced from a prior read-only feasibility study of Azure quota adjustability,
+> the regional-versus-zonal adjustment split, and on-demand capacity reservation
+> behaviour. Findings only — no subscription identifiers or engagement details
+> are reproduced here.
 
 ### Not every elimination is final
 

@@ -20,8 +20,10 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field
 
 from placement.contracts.decision import (
+    COMPUTE_ZONAL_QUOTA_NOTE,
     REGION_ACCESS_PROCESS,
     REGION_ACCESS_REFERENCE,
+    AdjustmentTier,
     Remediation,
     RemediationKind,
 )
@@ -73,6 +75,7 @@ class SkuRestriction(Frozen):
                     f"{self.sku} is not available to this subscription in "
                     f"{self.region}{' zones ' + ', '.join(self.zones) if zonal else ''}"
                 ),
+                tier=AdjustmentTier.SUPPORT_TICKET,
                 process=REGION_ACCESS_PROCESS,
                 reference=REGION_ACCESS_REFERENCE,
             )
@@ -83,6 +86,7 @@ class SkuRestriction(Frozen):
                     f"{self.sku} is excluded by this subscription's offer type in {self.region}. "
                     "A quota request will not change this; it needs a different offer."
                 ),
+                tier=AdjustmentTier.NOT_ADJUSTABLE,
             )
         return Remediation(
             kind=RemediationKind.UNKNOWN,
@@ -148,6 +152,14 @@ class TenantContext(BaseModel):
 
     sku_restrictions: list[SkuRestriction] = Field(default_factory=list)
     quotas: list[QuotaEntry] = Field(default_factory=list)
+    reservation_unsupported: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Region -> SKUs this subscription cannot create an on-demand capacity reservation for, "
+            "from `CapacityReservationSupported` on Microsoft.Compute/skus. Stored as the negative "
+            "because it is the actionable set."
+        ),
+    )
     allowed_locations: list[str] = Field(
         default_factory=list,
         description="From `allowedLocations` policy assignments. When set, a hard whitelist.",
@@ -185,13 +197,23 @@ class TenantContext(BaseModel):
         return None
 
     def assess(
-        self, sku: str, region: str, *, family: str | None = None, vcpus_required: int | None = None
+        self,
+        sku: str,
+        region: str,
+        *,
+        family: str | None = None,
+        vcpus_required: int | None = None,
+        zonal: bool = False,
     ) -> Deployability:
         """Can this subscription deploy this SKU here, and if not, what fixes it?
 
         Checks access first and quota second, because an access restriction makes
         the quota question moot — you cannot raise quota for a region you have no
         entitlement to.
+
+        `zonal` marks an ask that names a specific availability zone, which
+        changes the *remedy* rather than the verdict: regional vCPU quota is a
+        self-service API call, a zone-specific one is a support ticket.
         """
         restriction = self.restriction_for(sku, region)
         if restriction is not None and restriction.is_whole_region:
@@ -241,17 +263,42 @@ class TenantContext(BaseModel):
                     f"vCPU quota is {entry.limit}. GPU families in particular default to zero, so "
                     "this is the usual case rather than an exception."
                 ),
+                # Microsoft.Compute vCPU quota is a self-service Microsoft.Quota
+                # PUT at regional scope - no ticket, no human, no lead time.
+                tier=(
+                    AdjustmentTier.SUPPORT_TICKET if zonal else AdjustmentTier.SELF_SERVICE
+                ),
+                note=COMPUTE_ZONAL_QUOTA_NOTE if zonal else None,
                 process=(
-                    "Azure portal > Help + support > New support request. Issue type: 'Service and "
-                    "subscription Limit (quotas)'; Quota type: 'Compute-VM (cores-vCPUs) "
-                    "subscription limit increases'. Select the region and VM series, and state the "
-                    "new vCPU limit."
+                    "Regional: raise it directly via the Microsoft.Quota API (no ticket). "
+                    "Zone-specific: Azure portal > Help + support > New support request. Issue "
+                    "type: 'Service and subscription Limit (quotas)'; Quota type: 'Compute-VM "
+                    "(cores-vCPUs) subscription limit increases'. Name the zone, and note that the "
+                    "vCPU count applies to each requested zone."
                 ),
                 reference=REGION_ACCESS_REFERENCE,
             ),
             quota_available=entry.available,
             quota_required=required,
         )
+
+    def can_reserve(self, sku: str, region: str) -> bool | None:
+        """Whether an on-demand capacity reservation is possible for this SKU here.
+
+        A **third gate**, independent of access and quota. `CapacityReservationSupported`
+        is scoped to subscription x region and is the real pre-check: a
+        subscription can hold approved quota and still fail to reserve, which the
+        common field guidance of "get quota, then reserve" does not cover.
+
+        Do not confuse it with `SupportedCapacityReservationTypes`, which is a
+        static property of the VM series, reads identically on every
+        subscription, and overstates availability.
+
+        None when the data was not collected for that region.
+        """
+        if region not in self.reservation_unsupported:
+            return None
+        return sku not in self.reservation_unsupported[region]
 
     def restricted_regions(self) -> set[str]:
         """Regions where at least one SKU is restricted.
