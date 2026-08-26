@@ -1,0 +1,217 @@
+{
+  "_fixture_note": "Illustrative TEST FIXTURE shaped like an ARM locations response (api-version 2022-12-01). Trimmed to a handful of regions chosen to exercise every parser branch: Recommended and Other categories, regions with and without availability zones, paired and unpaired regions, and a logical region. NOT a snapshot and not authoritative - build a real snapshot with `ape snapshot build`.",
+  "value": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/eastus",
+      "name": "eastus",
+      "type": "Region",
+      "displayName": "East US",
+      "regionalDisplayName": "(US) East US",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Recommended",
+        "geography": "United States",
+        "geographyGroup": "US",
+        "longitude": "-79.8164",
+        "latitude": "37.3719",
+        "physicalLocation": "Virginia",
+        "pairedRegion": [
+          {
+            "name": "westus",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/westus"
+          }
+        ]
+      },
+      "availabilityZoneMappings": [
+        { "logicalZone": "1", "physicalZone": "eastus-az1" },
+        { "logicalZone": "2", "physicalZone": "eastus-az2" },
+        { "logicalZone": "3", "physicalZone": "eastus-az3" }
+      ]
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/westus",
+      "name": "westus",
+      "type": "Region",
+      "displayName": "West US",
+      "regionalDisplayName": "(US) West US",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Other",
+        "geography": "United States",
+        "geographyGroup": "US",
+        "longitude": "-122.417",
+        "latitude": "37.783",
+        "physicalLocation": "California",
+        "pairedRegion": [
+          {
+            "name": "eastus",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/eastus"
+          }
+        ]
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/westeurope",
+      "name": "westeurope",
+      "type": "Region",
+      "displayName": "West Europe",
+      "regionalDisplayName": "(Europe) West Europe",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Recommended",
+        "geography": "Netherlands",
+        "geographyGroup": "Europe",
+        "longitude": "4.9",
+        "latitude": "52.3667",
+        "physicalLocation": "Netherlands",
+        "pairedRegion": [
+          {
+            "name": "northeurope",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/northeurope"
+          }
+        ]
+      },
+      "availabilityZoneMappings": [
+        { "logicalZone": "1", "physicalZone": "westeurope-az1" },
+        { "logicalZone": "2", "physicalZone": "westeurope-az2" },
+        { "logicalZone": "3", "physicalZone": "westeurope-az3" }
+      ]
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/northeurope",
+      "name": "northeurope",
+      "type": "Region",
+      "displayName": "North Europe",
+      "regionalDisplayName": "(Europe) North Europe",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Recommended",
+        "geography": "Ireland",
+        "geographyGroup": "Europe",
+        "longitude": "-6.2597",
+        "latitude": "53.3478",
+        "physicalLocation": "Ireland",
+        "pairedRegion": [
+          {
+            "name": "westeurope",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/westeurope"
+          }
+        ]
+      },
+      "availabilityZoneMappings": [
+        { "logicalZone": "1", "physicalZone": "northeurope-az1" },
+        { "logicalZone": "2", "physicalZone": "northeurope-az2" },
+        { "logicalZone": "3", "physicalZone": "northeurope-az3" }
+      ]
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/swedencentral",
+      "name": "swedencentral",
+      "type": "Region",
+      "displayName": "Sweden Central",
+      "regionalDisplayName": "(Europe) Sweden Central",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Recommended",
+        "geography": "Sweden",
+        "geographyGroup": "Europe",
+        "longitude": "17.14127",
+        "latitude": "60.67488",
+        "physicalLocation": "Gävle",
+        "pairedRegion": [
+          {
+            "name": "swedensouth",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/swedensouth"
+          }
+        ]
+      },
+      "availabilityZoneMappings": [
+        { "logicalZone": "1", "physicalZone": "swedencentral-az1" },
+        { "logicalZone": "2", "physicalZone": "swedencentral-az2" },
+        { "logicalZone": "3", "physicalZone": "swedencentral-az3" }
+      ]
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/germanywestcentral",
+      "name": "germanywestcentral",
+      "type": "Region",
+      "displayName": "Germany West Central",
+      "regionalDisplayName": "(Europe) Germany West Central",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Recommended",
+        "geography": "Germany",
+        "geographyGroup": "Europe",
+        "longitude": "8.6821",
+        "latitude": "50.1109",
+        "physicalLocation": "Frankfurt",
+        "pairedRegion": [
+          {
+            "name": "germanynorth",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/germanynorth"
+          }
+        ]
+      },
+      "availabilityZoneMappings": [
+        { "logicalZone": "1", "physicalZone": "germanywestcentral-az1" },
+        { "logicalZone": "2", "physicalZone": "germanywestcentral-az2" },
+        { "logicalZone": "3", "physicalZone": "germanywestcentral-az3" }
+      ]
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/germanynorth",
+      "name": "germanynorth",
+      "type": "Region",
+      "displayName": "Germany North",
+      "regionalDisplayName": "(Europe) Germany North",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Other",
+        "geography": "Germany",
+        "geographyGroup": "Europe",
+        "longitude": "8.806422",
+        "latitude": "53.073635",
+        "physicalLocation": "Berlin",
+        "pairedRegion": [
+          {
+            "name": "germanywestcentral",
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/germanywestcentral"
+          }
+        ]
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/italynorth",
+      "name": "italynorth",
+      "type": "Region",
+      "displayName": "Italy North",
+      "regionalDisplayName": "(Europe) Italy North",
+      "metadata": {
+        "regionType": "Physical",
+        "regionCategory": "Recommended",
+        "geography": "Italy",
+        "geographyGroup": "Europe",
+        "longitude": "9.1859",
+        "latitude": "45.4685",
+        "physicalLocation": "Milan",
+        "pairedRegion": []
+      },
+      "availabilityZoneMappings": [
+        { "logicalZone": "1", "physicalZone": "italynorth-az1" },
+        { "logicalZone": "2", "physicalZone": "italynorth-az2" },
+        { "logicalZone": "3", "physicalZone": "italynorth-az3" }
+      ]
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/global",
+      "name": "global",
+      "type": "Region",
+      "displayName": "Global",
+      "regionalDisplayName": "Global",
+      "metadata": {
+        "regionType": "Logical",
+        "regionCategory": "Other"
+      }
+    }
+  ]
+}

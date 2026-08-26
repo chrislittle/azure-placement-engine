@@ -26,18 +26,62 @@ that decision layer, built against today's Azure.
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design and
 [`../azure_next/VISION.md`](../azure_next/VISION.md) for the thesis.
 
+Grounded in Microsoft's own guidance: [CAF's region-selection
+criteria](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-setup-guide/regions)
+supply the filters and weights, and [WAF
+flows](https://learn.microsoft.com/en-us/azure/well-architected/reliability/identify-flows)
+supply the structure of the input.
+
 ## Status
 
-Early. Contracts and acceptance scenarios are in place; the engine is not built yet.
+Early. Contracts, scenarios, and the first ingester are in; the solver is not.
 
 - [x] Requirements contract, structured around WAF flows (`src/placement/contracts/requirements.py`)
 - [x] Decision-record contract (`src/placement/contracts/decision.py`)
 - [x] Four acceptance scenarios (`scenarios/`)
-- [ ] World snapshot model + ingesters (region metadata first)
+- [x] Snapshot model + store, with digest pinning (`src/placement/snapshot/`)
+- [x] Ingester 1 — region metadata from the ARM `locations` API
+- [ ] Ingester 2 — service availability by region
+- [ ] Ingester 3 — capability-level availability
 - [ ] Tenant context collectors (offline / live)
-- [ ] Constraint solver
-- [ ] Scoring + topology composition
-- [ ] CLI
+- [ ] Constraint solver, topology composition, scoring
+
+## Use
+
+Validate a requirements file and see how the engine reads it:
+
+```bash
+ape validate scenarios/eu-residency.yaml
+```
+
+Build a pinned world snapshot. Region metadata is public, but the ARM `locations`
+API is subscription-scoped, so either point the engine at a subscription:
+
+```bash
+ape snapshot build --subscription <subscription-id>
+```
+
+...or collect the payload yourself and feed it in, keeping credentials out of
+this process entirely:
+
+```bash
+az rest --method get --url "https://management.azure.com/subscriptions/<id>/locations?api-version=2022-12-01" > locations.json
+```
+
+```bash
+ape snapshot build --from-file locations.json
+```
+
+Then inspect it:
+
+```bash
+ape snapshot show --geo Europe
+```
+
+Snapshots are written to `snapshots/<version>/` **and committed** — they are the
+reproducibility guarantee, not a cache. Each is stored with its content digest,
+and loading verifies it, so a snapshot that has been edited since it was written
+fails loudly instead of silently making old decision records unreproducible.
 
 ## Layout
 
