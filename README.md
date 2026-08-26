@@ -42,8 +42,9 @@ Early. Contracts, scenarios, and the first ingester are in; the solver is not.
 - [x] Snapshot model + store, with digest pinning (`src/placement/snapshot/`)
 - [x] Ingester 1 — region metadata from the ARM `locations` API
 - [x] Ingester 2 — service availability by region, from ARM provider metadata
-- [ ] Ingester 3 — capability-level availability
-- [ ] Ingester 4 — retail pricing
+- [x] Ingester 3 — capability level (region zones, Storage SKUs, Postgres per-region flags)
+- [ ] Ingester 4 — VM SKUs from `Microsoft.Compute/skus`
+- [ ] Ingester 5 — retail pricing
 - [ ] Tenant context collectors (offline / live)
 - [ ] Constraint solver, topology composition, scoring
 
@@ -69,10 +70,11 @@ this process entirely:
 SUB=<subscription-id>
 az rest --method get --url "https://management.azure.com/subscriptions/$SUB/locations?api-version=2022-12-01" > locations.json
 az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers?api-version=2021-04-01" > providers.json
+az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Storage/skus?api-version=2024-01-01" > storage-skus.json
 ```
 
 ```bash
-ape snapshot build --locations locations.json --providers providers.json
+ape snapshot build --locations locations.json --providers providers.json --storage-skus storage-skus.json
 ```
 
 Slices are additive, so a snapshot can be built up over several runs — but

@@ -70,8 +70,11 @@ def load(version: str, *, root: Path | None = None, verify: bool = True) -> Worl
             actual = snapshot.digest()
             if expected != actual:
                 raise SnapshotError(
-                    f"snapshot '{version}' does not match its recorded digest — it has been "
-                    f"modified since it was written.\n  recorded: {expected}\n  actual:   {actual}"
+                    f"snapshot '{version}' does not match its recorded digest - it has been "
+                    f"modified since it was written, or the snapshot model changed shape.\n"
+                    f"  recorded: {expected}\n  actual:   {actual}\n"
+                    f"Rebuild it from source payloads rather than editing it; pass verify=False "
+                    f"only to inspect what changed."
                 )
 
     return snapshot

@@ -235,6 +235,54 @@ A low-coverage region means *either* a genuinely thin region *or* one this
 subscription cannot see. Both must reach the reader before they act, so it
 belongs on the candidate as a risk either way.
 
+### What the capability ingest settled
+
+This is the slice that answers decision #4, deferred during scoping because the
+shape had to follow the data. Having now seen three sources, the answer is that a
+capability is **neither a free string nor a typed field — it is a named rule with
+a source-specific resolver**:
+
+| Capability | Resolved from | Shape |
+|---|---|---|
+| `availability-zones` | the region table | zone count, no API call |
+| `zone-redundant-storage`, `geo-redundant-storage`, `premium-block-blob` | `Microsoft.Storage/skus` | encoded in **SKU names** (`Standard_ZRS`, `Standard_GZRS`) |
+| `zone-redundant-ha`, `geo-backup` | `Microsoft.DBforPostgreSQL/locations/{loc}/capabilities` | explicit flags, **one call per region** |
+
+The requirements file names the capability; the ingester knows how to resolve it.
+Everything else stays `None` — unknown, a risk on the surviving candidate, never
+an elimination. Coverage is uneven by nature, since most resource providers
+expose no capabilities API at all.
+
+**The API can be more current than the docs, and should win.** `westeurope`
+reports `zoneRedundantHaSupported: Disabled` despite having three availability
+zones — which looks wrong until you read the [Postgres regions
+table](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/overview),
+which marks West Europe as supported **but** annotated *"new zone-redundant HA
+deployments are temporarily blocked"*. The API reports what can be deployed
+today; the docs table reports nominal support. A placement engine is deciding
+where to deploy **now**, so the API is the authority and is deliberately allowed
+to disagree.
+
+That single fact reshapes the `eu-residency` scenario against live data:
+
+| German region | All services | Zone-redundant HA | Zones |
+|---|---|---|---|
+| `germanywestcentral` | yes | yes | 3 |
+| `germanynorth` | no | no | 0 |
+
+So `germanywestcentral` is the only viable region in the German geography, and
+there is **no in-country secondary at all** — confirmed from real data rather
+than assumed. Exactly the case `relaxations` exists to answer.
+
+### A digest that survives schema growth
+
+Adding the capability slice broke every previously written snapshot's digest —
+an empty `capabilities: {}` changed the hash of content that had not changed.
+That is backwards: the digest exists to prove *content* is unchanged, so a schema
+addition must not retroactively invalidate it. `canonical()` now strips empty
+collections as well as nulls, so a new slice is invisible to snapshots that do
+not use it, while populating one still changes the hash.
+
 ### Tenant context — customer-specific
 
 Two collection modes, same schema. **Offline** (default) is a JSON export —

@@ -20,6 +20,16 @@ class Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+def _strip_empty(value: Any) -> Any:
+    """Drop empty dicts and lists recursively. Used to keep the snapshot digest
+    stable across additive schema changes — see `WorldSnapshot.canonical`."""
+    if isinstance(value, dict):
+        return {k: _strip_empty(v) for k, v in value.items() if v != {} and v != [] and v is not None}
+    if isinstance(value, list):
+        return [_strip_empty(v) for v in value]
+    return value
+
+
 # --------------------------------------------------------------------------
 # Provenance
 # --------------------------------------------------------------------------
@@ -193,6 +203,37 @@ class ServiceAvailability(Frozen):
 
 
 # --------------------------------------------------------------------------
+# Capabilities
+# --------------------------------------------------------------------------
+
+
+class CapabilityFact(Frozen):
+    """Where one named capability of one resource type is actually available.
+
+    This is the answer to the question deferred during scoping — whether
+    capabilities should be free strings or typed facts. Having now seen the
+    sources, neither: a capability is a **named rule with a source-specific
+    resolver**. `zone-redundant-storage` comes from SKU names in
+    `Microsoft.Storage/skus`, `zone-redundant-ha` from a flag in the Postgres
+    per-region capabilities API, `availability-zones` from the region table
+    itself. The requirements file names the capability; the ingester knows how to
+    resolve it.
+    """
+
+    capability: str = Field(description="e.g. 'zone-redundant-ha'.")
+    resource_type: str = Field(description="ARM resource type this applies to.")
+    regions: list[str] = Field(default_factory=list, description="Regions where available, sorted.")
+    source: str = Field(description="Which ingester established this.")
+    detail: str | None = Field(
+        default=None, description="How it was derived — cited in the decision record's evidence."
+    )
+
+    @staticmethod
+    def key(resource_type: str, capability: str) -> str:
+        return f"{resource_type.lower()}::{capability.lower()}"
+
+
+# --------------------------------------------------------------------------
 # Snapshot
 # --------------------------------------------------------------------------
 
@@ -213,6 +254,9 @@ class WorldSnapshot(BaseModel):
     regions: dict[str, Region] = Field(default_factory=dict)
     services: dict[str, ServiceAvailability] = Field(
         default_factory=dict, description="Keyed by lowercased ARM resource type."
+    )
+    capabilities: dict[str, CapabilityFact] = Field(
+        default_factory=dict, description="Keyed by '<resource type>::<capability>', lowercased."
     )
     sources: dict[str, SourceRef] = Field(default_factory=dict)
 
@@ -246,6 +290,29 @@ class WorldSnapshot(BaseModel):
     def regions_for_service(self, resource_type: str) -> set[str]:
         entry = self.service(resource_type)
         return set(entry.regions) if entry else set()
+
+    def capability(self, resource_type: str, capability: str) -> CapabilityFact | None:
+        return self.capabilities.get(CapabilityFact.key(resource_type, capability))
+
+    def capability_available(
+        self, resource_type: str, capability: str, region: str
+    ) -> bool | None:
+        """Whether a capability is available in a region.
+
+        **None means unknown**, and callers must not read it as False. Capability
+        coverage is uneven — some resource providers expose a capabilities API and
+        many do not — so most capabilities will be unknown for most services. An
+        unresolvable capability is a risk recorded on the surviving candidate,
+        never an elimination.
+        """
+        fact = self.capability(resource_type, capability)
+        if fact is None:
+            return None
+        return region in fact.regions
+
+    def known_capabilities(self, resource_type: str) -> set[str]:
+        prefix = f"{resource_type.lower()}::"
+        return {k[len(prefix) :] for k in self.capabilities if k.startswith(prefix)}
 
     def service_coverage(self, region: str) -> float:
         """Fraction of regionally-deployable resource types available in a region.
@@ -298,7 +365,15 @@ class WorldSnapshot(BaseModel):
     # -- identity --------------------------------------------------------
 
     def canonical(self) -> dict[str, Any]:
-        return self.model_dump(mode="json", exclude_none=True)
+        """The form the digest is computed over.
+
+        Empty collections are stripped as well as nulls, so that **adding a new
+        slice to the model does not change the digest of snapshots that do not
+        use it**. Without this, every schema addition retroactively invalidates
+        every snapshot ever written — which is exactly backwards, since the
+        digest exists to prove the *content* is unchanged.
+        """
+        return _strip_empty(self.model_dump(mode="json", exclude_none=True))
 
     def digest(self) -> str:
         """Content hash, pinned into every decision record.

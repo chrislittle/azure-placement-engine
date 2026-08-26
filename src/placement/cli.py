@@ -20,6 +20,7 @@ from placement import __version__
 from placement.contracts import load_requirements
 from placement.snapshot import store
 from placement.snapshot.ingest import PayloadError, read_payload
+from placement.snapshot.ingest import capabilities as capabilities_ingest
 from placement.snapshot.ingest import regions as regions_ingest
 from placement.snapshot.ingest import services as services_ingest
 from placement.snapshot.model import WorldSnapshot
@@ -47,7 +48,15 @@ COLLECT_HELP = """To collect offline, without this process holding a credential:
 
   [cyan]SUB=<subscription-id>
   az rest --method get --url "https://management.azure.com/subscriptions/$SUB/locations?api-version=2022-12-01" > locations.json
-  az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers?api-version=2021-04-01" > providers.json[/cyan]
+  az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers?api-version=2021-04-01" > providers.json
+  az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Storage/skus?api-version=2024-01-01" > storage-skus.json[/cyan]
+
+Postgres capabilities are per region, so collect them into a directory:
+
+  [cyan]mkdir -p pg
+  for R in $(ape snapshot regions); do
+    az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.DBforPostgreSQL/locations/$R/capabilities?api-version=2024-08-01" > "pg/$R.json"
+  done[/cyan]
 """
 
 
@@ -70,6 +79,20 @@ def snapshot_build(
     providers: Path | None = typer.Option(
         None, "--providers", exists=True, dir_okay=False, help="An offline ARM providers response."
     ),
+    storage_skus: Path | None = typer.Option(
+        None,
+        "--storage-skus",
+        exists=True,
+        dir_okay=False,
+        help="An offline Microsoft.Storage/skus response.",
+    ),
+    postgres_dir: Path | None = typer.Option(
+        None,
+        "--postgres-dir",
+        exists=True,
+        file_okay=False,
+        help="A directory of <region>.json Postgres capability responses, one per region.",
+    ),
     subscription: str | None = typer.Option(
         None, "--subscription", "-s", help="Fetch live from ARM using the ambient Azure credential."
     ),
@@ -83,8 +106,8 @@ def snapshot_build(
     must land before services, since resolving provider metadata needs the region
     table to join against.
     """
-    if not any((locations, providers, subscription)):
-        err.print("[red]Provide --subscription, or --locations / --providers.[/red]\n")
+    if not any((locations, providers, storage_skus, postgres_dir, subscription)):
+        err.print("[red]Provide --subscription, or one or more offline payloads.[/red]\n")
         err.print(COLLECT_HELP)
         raise typer.Exit(2)
 
@@ -114,6 +137,37 @@ def snapshot_build(
             err.print(f"[red]{exc}[/red]")
             raise typer.Exit(1) from exc
 
+    if storage_skus or subscription:
+        payload = (
+            _load(storage_skus) if storage_skus else capabilities_ingest.fetch_storage_skus(subscription)  # type: ignore[arg-type]
+        )
+        try:
+            snapshot = capabilities_ingest.ingest_storage_skus(
+                snapshot, payload, subscription_id=subscription
+            )
+        except capabilities_ingest.IngestError as exc:
+            err.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1) from exc
+
+    if postgres_dir or subscription:
+        if postgres_dir:
+            per_region = {p.stem: _load(p) for p in sorted(postgres_dir.glob("*.json"))}
+        else:
+            per_region = capabilities_ingest.fetch_postgres_capabilities(
+                subscription, snapshot.placement_candidates()  # type: ignore[arg-type]
+            )
+        try:
+            snapshot = capabilities_ingest.ingest_postgres_capabilities(
+                snapshot, per_region, subscription_id=subscription
+            )
+        except capabilities_ingest.IngestError as exc:
+            err.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1) from exc
+
+    if snapshot.regions:
+        # Derived from the region table, so it costs nothing and always refreshes.
+        snapshot = capabilities_ingest.ingest_region_capabilities(snapshot)
+
     path = store.save(snapshot)
 
     console.print(f"[green]Wrote[/green] {path.relative_to(store.repo_root())}")
@@ -140,6 +194,14 @@ def snapshot_build(
             f"  [bold]{len(snapshot.services)} resource types[/bold], "
             f"{len(regional)} with a regional footprint"
         )
+
+    if snapshot.capabilities:
+        console.print(f"  [bold]{len(snapshot.capabilities)} capability facts[/bold]")
+        for key in sorted(snapshot.capabilities):
+            fact = snapshot.capabilities[key]
+            console.print(
+                f"    {fact.capability:24s} {len(fact.regions):3d} regions  [dim]{fact.source}[/dim]"
+            )
 
     console.print(f"  digest {snapshot.digest()}")
 
