@@ -91,15 +91,26 @@ class ZoneMapping(Frozen):
     physical_zone: str
 
 
-#: Suffixes Microsoft uses for internal canary and staging regions. These come
-#: back from the ARM locations API looking like ordinary regions -- `eastus2euap`
-#: even reports four availability zones, more than any production region -- so
-#: without this they would score well and be recommended to a customer.
-INTERNAL_REGION_SUFFIXES = ("stage", "stg", "euap")
+def _internal_markers() -> tuple[tuple[str, ...], frozenset[str]]:
+    """Which regions are Microsoft-internal.
 
-#: Geography values that only ever appear on those internal regions. A secondary
-#: check; the suffixes above are the primary signal.
-INTERNAL_GEOGRAPHIES = frozenset({"Canary (US)", "Stage (US)", "usa", "asia"})
+    Curated, not observed — no API distinguishes a canary region from a real
+    one. Lives in `knowledge/internal-regions.yaml` so it carries a review date
+    and can be corrected without a code change. Falls back to a conservative
+    built-in list if the file is missing, because failing open here would let a
+    canary region be recommended.
+    """
+    try:
+        from placement import knowledge
+
+        return knowledge.internal_region_suffixes(), knowledge.internal_geographies()
+    except Exception:  # noqa: BLE001 - never let curation break the model
+        return ("stage", "stg", "euap"), frozenset(
+            {"Canary (US)", "Stage (US)", "usa", "asia"}
+        )
+
+
+INTERNAL_REGION_SUFFIXES, INTERNAL_GEOGRAPHIES = _internal_markers()
 
 
 class Region(Frozen):

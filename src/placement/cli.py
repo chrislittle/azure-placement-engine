@@ -16,7 +16,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from placement import __version__
+from placement import __version__, collect as collect_mod, knowledge
 from placement.contracts import load_requirements
 from placement.snapshot import store
 from placement.snapshot.ingest import PayloadError, read_payload
@@ -46,7 +46,7 @@ def version() -> None:
 # --------------------------------------------------------------------------
 
 
-COLLECT_HELP = """To collect offline, without this process holding a credential:
+COLLECT_HELP = r"""To collect offline, without this process holding a credential:
 
   [cyan]SUB=<subscription-id>
   az rest --method get --url "https://management.azure.com/subscriptions/$SUB/locations?api-version=2022-12-01" > locations.json
@@ -80,8 +80,72 @@ def _load(path: Path) -> dict:
     return payload
 
 
+@app.command()
+def collect(
+    out: Path = typer.Option(
+        Path("payloads"), "--out", "-o", help="Directory to write raw API responses into."
+    ),
+    subscription: str = typer.Option(
+        None, "--subscription", "-s", help="Defaults to the current `az` subscription."
+    ),
+    only: str = typer.Option(
+        None, "--only", help="Comma-separated source names, e.g. 'locations,usages'."
+    ),
+    workers: int = typer.Option(8, "--workers", help="Concurrent requests."),
+) -> None:
+    """Collect every raw payload the snapshot is built from.
+
+    Uses whatever `az` is already logged in as. Payloads are kept raw, so a
+    projection bug can be fixed and replayed without re-downloading.
+    """
+    try:
+        sub = subscription or collect_mod.current_subscription()
+    except collect_mod.CollectError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    names = [n.strip() for n in only.split(",")] if only else None
+    console.print(f"Collecting into {out} ...")
+
+    done = {"n": 0}
+
+    def progress(result: collect_mod.Result) -> None:
+        done["n"] += 1
+        if not result.ok and result.source == "locations":
+            err.print(f"  [red]{result.source}: {result.detail}[/red]")
+        elif done["n"] % 25 == 0:
+            console.print(f"  {done['n']} responses...")
+
+    try:
+        results = collect_mod.collect(sub, out, only=names, workers=workers, on_progress=progress)
+    except collect_mod.CollectError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    table = Table(header_style="bold")
+    table.add_column("source")
+    table.add_column("ok", justify="right")
+    table.add_column("failed", justify="right")
+    table.add_column("size", justify="right")
+    for source, (ok, failed, size) in sorted(collect_mod.summarise(results).items()):
+        table.add_row(source, str(ok), str(failed) if failed else "-", f"{size / 1048576:.1f} MB")
+    console.print(table)
+    console.print(
+        "[dim]Failures are usually a service not being offered in that region, "
+        "which is a real answer rather than an error.[/dim]"
+    )
+    console.print(f"Next: [cyan]ape snapshot build --payloads {out}[/cyan]")
+
+
 @snapshot_app.command("build")
 def snapshot_build(
+    payloads: Path | None = typer.Option(
+        None,
+        "--payloads",
+        exists=True,
+        file_okay=False,
+        help="A directory written by `ape collect`. Infers every source beneath it.",
+    ),
     locations: Path | None = typer.Option(
         None, "--locations", exists=True, dir_okay=False, help="An offline ARM locations response."
     ),
@@ -135,6 +199,18 @@ def snapshot_build(
     must land before services, since resolving provider metadata needs the region
     table to join against.
     """
+    if payloads:
+        # Individual flags still win, so a single slice can be rebuilt in place.
+        def _if(path: Path, *, is_dir: bool = False) -> Path | None:
+            return path if (path.is_dir() if is_dir else path.is_file()) else None
+
+        locations = locations or _if(payloads / "locations.json")
+        providers = providers or _if(payloads / "providers.json")
+        storage_skus = storage_skus or _if(payloads / "storage-skus.json")
+        postgres_dir = postgres_dir or _if(payloads / "pg", is_dir=True)
+        compute_dir = compute_dir or _if(payloads / "compute", is_dir=True)
+        usages_dir = usages_dir or _if(payloads / "usages", is_dir=True)
+
     if not any((locations, providers, storage_skus, postgres_dir, compute_dir, subscription)):
         err.print("[red]Provide --subscription, or one or more offline payloads.[/red]\n")
         err.print(COLLECT_HELP)
@@ -270,6 +346,13 @@ def snapshot_build(
                 f"    {fact.capability:24s} {len(fact.regions):3d} regions  "
                 f"[dim]{scope} <- {fact.source}[/dim]"
             )
+
+    stale = knowledge.stale_files()
+    if stale:
+        console.print(
+            "  [yellow]curated knowledge past its review window:[/yellow] "
+            + ", ".join(f.name for f in stale)
+        )
 
     console.print(f"  digest {snapshot.digest()}")
 

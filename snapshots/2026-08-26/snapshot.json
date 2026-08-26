@@ -127040,40 +127040,40 @@
   "sources": {
     "arm-locations": {
       "api_version": "2022-12-01",
-      "as_of": "2026-08-26T18:11:39.168974Z",
+      "as_of": "2026-08-26T19:26:31.178294Z",
       "endpoint": "https://management.azure.com/subscriptions/{subscription_id}/locations",
       "notes": "Region metadata is public, but the ARM locations API is subscription-scoped and the visible region set can vary by offer type.",
       "source": "arm-locations"
     },
     "arm-providers": {
       "api_version": "2021-04-01",
-      "as_of": "2026-08-26T18:11:39.217863Z",
+      "as_of": "2026-08-26T19:26:31.224237Z",
       "endpoint": "https://management.azure.com/subscriptions/{subscription_id}/providers",
       "notes": "Provider `locations` are display names in inconsistent casing; normalised to ARM region names on ingest. `registrationState` is deliberately not recorded here - it is subscription-specific and belongs to tenant context.",
       "source": "arm-providers"
     },
     "compute-skus": {
       "api_version": "2021-07-01",
-      "as_of": "2026-08-26T19:03:23.942590Z",
+      "as_of": "2026-08-26T19:26:32.814604Z",
       "endpoint": "https://management.azure.com/subscriptions/{subscription_id}/providers/Microsoft.Compute/skus",
       "notes": "Projected from per-region responses (59 queried); only fields used by a placement decision are kept. `restrictions` is deliberately not recorded here - NotAvailableForSubscription is a property of the subscription, not the world, and is extracted into tenant context where it becomes a remediation signal.",
       "source": "compute-skus"
     },
     "postgres-capabilities": {
       "api_version": "2024-08-01",
-      "as_of": "2026-08-26T18:11:39.263154Z",
+      "as_of": "2026-08-26T19:26:31.266735Z",
       "endpoint": "https://management.azure.com/subscriptions/{subscription_id}/providers/Microsoft.DBforPostgreSQL/locations/{location}/capabilities",
       "notes": "Collected per region (51 queried). `restricted` is deliberately not recorded - it varies by subscription and belongs to tenant context.",
       "source": "postgres-capabilities"
     },
     "region-capabilities": {
-      "as_of": "2026-08-26T19:03:24.365945Z",
+      "as_of": "2026-08-26T19:26:33.058372Z",
       "notes": "Derived from the region table; no separate API call.",
       "source": "region-capabilities"
     },
     "storage-skus": {
       "api_version": "2024-01-01",
-      "as_of": "2026-08-26T18:11:39.235663Z",
+      "as_of": "2026-08-26T19:26:31.240581Z",
       "endpoint": "https://management.azure.com/subscriptions/{subscription_id}/providers/Microsoft.Storage/skus",
       "notes": "Capabilities are derived from SKU names. `restrictions` on each SKU is deliberately not recorded - it is subscription-specific and belongs to tenant context.",
       "source": "storage-skus"

@@ -1,0 +1,54 @@
+# Which signals actually predict capacity, and which look like they do but don't.
+#
+# Getting this wrong is expensive in both directions: implying capacity that
+# isn't there produces recommendations that fail at deploy time, and treating a
+# reachable region as unavailable sends customers somewhere worse.
+reviewed: 2026-08-26
+source: >
+  Prior read-only on-demand capacity reservation study (2026-06), validated
+  against two subscriptions on different offer types, with a ground-truth
+  reservation PUT on each.
+confidence: high
+
+signals:
+  capacity-reservation-supported:
+    field: CapacityReservationSupported
+    api: Microsoft.Compute/skus
+    scope: subscription x region
+    use: true
+    note: >
+      The real pre-check for on-demand capacity reservation. False means the
+      reservation will fail even when quota has been approved -- so the common
+      guidance "get quota, then reserve" is insufficient. Treat an absent field
+      as unsupported: a false positive sends someone at a reservation that fails.
+
+  supported-capacity-reservation-types:
+    field: SupportedCapacityReservationTypes
+    api: Microsoft.Compute/skus
+    scope: global, static
+    use: false
+    note: >
+      Describes only whether the VM series is CAPABLE of reservation. Reads
+      identically on every subscription and overstates availability. Do not key
+      reservation decisions off this field.
+
+  spot-placement-score:
+    api: Microsoft.Compute/locations/{region}/placementScores/spot
+    scope: subscription x region, SPOT POOL ONLY
+    use: spot-tolerant workloads only
+    note: >
+      Describes the spot pool, which is a different capacity pool from
+      on-demand. A "High" score has been observed for a SKU in a region where an
+      on-demand capacity reservation failed with SkuNotAvailable. Never use it as
+      a proxy for on-demand capacity.
+
+  sku-restrictions:
+    field: restrictions[].reasonCode
+    api: Microsoft.Compute/skus
+    scope: subscription x region
+    use: true
+    note: >
+      NotAvailableForSubscription is an entitlement gap and is requestable.
+      QuotaId means the subscription's offer excludes the SKU -- a support ticket
+      will not change it, and reporting it as requestable wastes the customer's
+      time.

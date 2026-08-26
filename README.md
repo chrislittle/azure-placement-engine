@@ -45,11 +45,29 @@ Early. Contracts, scenarios, and the first ingester are in; the solver is not.
 - [x] Ingester 3 — capability level (region zones, Storage SKUs, Postgres per-region flags)
 - [x] Ingester 4 — VM SKUs from `Microsoft.Compute/skus` (projected per region)
 - [x] Tenant context — SKU restrictions **and vCPU quota** as remediation signals
-- [ ] Ingester 5 — retail pricing
+- [x] `ape collect` — one-command reproducible collection
+- [x] `knowledge/` — curated rules extracted from code, dated and sourced
+- [ ] **Solver** — constrain, compose, score, record
+- [ ] Ingester 5 — retail pricing and latency
 - [ ] Tenant context — policy `allowedLocations`, existing footprint
 - [ ] Constraint solver, topology composition, scoring
 
 ## Use
+
+Collect every raw payload, then build a snapshot from it:
+
+```bash
+ape collect --out payloads
+```
+
+```bash
+ape snapshot build --payloads payloads
+```
+
+`collect` uses whatever `az` is already logged in as. Payloads are kept as raw
+API responses, so a projection bug can be fixed and replayed without
+re-downloading ~250 MB. Individual failures are normal — Postgres is not offered
+in every region, and that is a real answer rather than an error.
 
 Validate a requirements file and see how the engine reads it:
 
@@ -57,32 +75,7 @@ Validate a requirements file and see how the engine reads it:
 ape validate scenarios/eu-residency.yaml
 ```
 
-Build a pinned world snapshot. Region metadata is public, but the ARM `locations`
-API is subscription-scoped, so either point the engine at a subscription:
-
-```bash
-ape snapshot build --subscription <subscription-id>
-```
-
-...or collect the payload yourself and feed it in, keeping credentials out of
-this process entirely:
-
-```bash
-SUB=<subscription-id>
-az rest --method get --url "https://management.azure.com/subscriptions/$SUB/locations?api-version=2022-12-01" > locations.json
-az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers?api-version=2021-04-01" > providers.json
-az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Storage/skus?api-version=2024-01-01" > storage-skus.json
-```
-
-```bash
-ape snapshot build --locations locations.json --providers providers.json --storage-skus storage-skus.json
-```
-
-Slices are additive, so a snapshot can be built up over several runs — but
-regions must land before services, since provider metadata is joined against the
-region table.
-
-Then inspect it:
+Inspect a snapshot:
 
 ```bash
 ape snapshot show --geo Europe
@@ -92,6 +85,29 @@ Snapshots are written to `snapshots/<version>/` **and committed** — they are t
 reproducibility guarantee, not a cache. Each is stored with its content digest,
 and loading verifies it, so a snapshot that has been edited since it was written
 fails loudly instead of silently making old decision records unreproducible.
+
+Subscription-specific facts (SKU restrictions, quota, capacity-reservation
+support) go to a separate tenant context, which is **never committed**:
+
+```bash
+ape snapshot build --payloads payloads --tenant-out tenant-context.json
+```
+
+## Three kinds of data
+
+Kept apart deliberately, because they refresh differently and rot differently:
+
+| Kind | Where | Refresh |
+|---|---|---|
+| **Observed facts** — regions, services, capabilities, SKUs | `snapshots/` (committed, digest-pinned) | `ape collect` |
+| **Tenant facts** — restrictions, quota, reservation support | tenant context (never committed) | `ape collect` |
+| **Curated knowledge** — quota adjustment tiers, which capacity signals lie | `knowledge/*.yaml` (dated, sourced) | human review |
+
+The third kind is what no API returns: that `Microsoft.Quota` is regional-only,
+that spot placement scores describe a different pool from on-demand, which
+regions are Microsoft-internal. It used to live in docstrings, where it could not
+be reviewed or dated and would rot invisibly. Each file now carries a `reviewed:`
+date, and `ape snapshot build` warns when one is past its review window.
 
 ## Layout
 
@@ -103,6 +119,7 @@ fails loudly instead of silently making old decision records unreproducible.
 | `src/placement/engine/` | Resolve, constrain, compose, score |
 | `src/placement/emit/` | Reports, Azure Policy, IaC parameters |
 | `scenarios/` | Acceptance fixtures — the four constraint families |
+| `knowledge/` | Curated rules no API returns — dated and sourced |
 | `docs/` | Architecture and decision records |
 
 ## Develop

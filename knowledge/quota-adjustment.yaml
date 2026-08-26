@@ -1,0 +1,125 @@
+# How quota is actually adjusted, per provider.
+#
+# "Needs a quota increase" spans an enormous range: for some providers it is a
+# programmatic Microsoft.Quota PUT with no human in the loop; for others it is a
+# portal flow; for others a support ticket with engineering review and days of
+# lead time. No API reports which. This is curated knowledge.
+#
+# Tiers:
+#   self-service    Microsoft.Quota PUT. Programmatic, immediate.
+#   portal          Portal / quota-management flow.
+#   support-ticket  Human review, real lead time.
+#   not-adjustable  No path; the limit is fixed.
+reviewed: 2026-08-26
+source: >
+  Prior read-only Azure quota-adjustability feasibility study (2026-06), which
+  enumerated the portal's quota problem-type categories against Microsoft.Quota
+  leaf availability per provider. Findings only.
+confidence: medium
+recheck_after: 2026-12-31
+
+# Microsoft.Quota is REGIONAL-ONLY -- it has no field expressing a per-zone
+# limit. So wherever a provider has a genuine zonal capacity dimension, a
+# zone-specific ask needs a different (harder) method than the regional one.
+# Promising self-service for a zonal ask would be wrong.
+zonal_note: >
+  Microsoft.Quota is regional-only and cannot express a per-zone limit, so a
+  zone-specific vCPU request must go through a support ticket naming the zone,
+  even though the regional equivalent is self-service. The vCPU count applies to
+  each requested zone.
+
+# When a non-Compute service's zonal need is really about VM capacity in a zone,
+# the quota lives on Microsoft.Compute vCPU families -- route it there.
+compute_backed_note: >
+  Zonal capacity for this service draws on Microsoft.Compute vCPU family quota,
+  so the request routes through Compute rather than the wrapping service.
+
+providers:
+  Microsoft.Compute:
+    regional: self-service
+    zonal: support-ticket
+    zonal_dimension: true
+    note: vCPU capacity is allocatable per availability zone.
+
+  Microsoft.MachineLearningServices:
+    regional: self-service
+    zonal: support-ticket
+    zonal_dimension: true
+    note: AML compute is VM-backed; same zonal capacity story as Compute.
+
+  Microsoft.ContainerService:
+    regional: self-service
+    zonal: self-service
+    zonal_dimension: false
+    compute_backed: true
+    note: Cluster count is regional; node-pool zonal capacity draws on Compute.
+
+  Microsoft.HDInsight:
+    regional: self-service
+    zonal: self-service
+    zonal_dimension: false
+    compute_backed: true
+    note: Cluster cores are regional; worker zonal capacity draws on Compute.
+
+  Microsoft.Network:
+    regional: self-service
+    zonal: self-service
+    zonal_dimension: false
+
+  Microsoft.Web:
+    regional: self-service
+    zonal: self-service
+    zonal_dimension: false
+    note: Zone redundancy is a deploy option, not a quota.
+
+  Microsoft.App:
+    regional: self-service
+    zonal: self-service
+    zonal_dimension: false
+
+  Microsoft.DBforMySQL:
+    regional: self-service
+    zonal: self-service
+    zonal_dimension: false
+    note: vCore quota is regional; zone-redundant HA is a deploy option.
+
+  Microsoft.AVS:
+    regional: self-service
+    zonal: self-service
+    zonal_dimension: false
+
+  Microsoft.DevCenter:
+    regional: self-service
+    zonal: self-service
+    zonal_dimension: false
+
+  Microsoft.DBforPostgreSQL:
+    regional: portal
+    zonal: portal
+    zonal_dimension: false
+
+  Microsoft.DocumentDB:
+    regional: portal
+    zonal: portal
+    zonal_dimension: false
+
+  Microsoft.Storage:
+    regional: portal
+    zonal: portal
+    zonal_dimension: false
+    note: Per-account limit increases route through portal/support, not Microsoft.Quota.
+
+  Microsoft.Sql:
+    regional: portal
+    zonal: portal
+    zonal_dimension: false
+
+  Microsoft.EventHub:
+    regional: portal
+    zonal: portal
+    zonal_dimension: false
+
+  Microsoft.Search:
+    regional: portal
+    zonal: portal
+    zonal_dimension: false

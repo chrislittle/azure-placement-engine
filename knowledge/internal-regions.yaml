@@ -1,0 +1,27 @@
+# Microsoft's internal canary and staging regions.
+#
+# These come back from the ARM locations API looking like ordinary regions, and
+# eastus2euap reports FOUR availability zones -- more than any production region
+# -- so without this they score well and get recommended to customers.
+#
+# No API distinguishes them. This is curated knowledge and will drift as
+# Microsoft adds internal regions; re-check when a snapshot reports an
+# unfamiliar region with an implausibly good profile.
+reviewed: 2026-08-26
+source: >
+  Observed directly in a live ARM locations response: *euap and *stg regions come
+  back regionType=Physical, while *stage regions come back regionType=Logical.
+confidence: high
+
+# Primary signal. Matched as a name suffix.
+name_suffixes:
+  - stage
+  - stg
+  - euap
+
+# Secondary signal. These geography values only ever appear on internal regions.
+geographies:
+  - Canary (US)
+  - Stage (US)
+  - usa
+  - asia

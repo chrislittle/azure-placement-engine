@@ -52,3 +52,65 @@ def test_snapshot_build_accepts_compute_dir_alone(tmp_path):
     # Reaches the ingester (and fails there for lack of payloads) rather than
     # being rejected as "no input provided".
     assert result.exit_code != 2, result.output
+
+
+# --------------------------------------------------------------------------
+# collect
+# --------------------------------------------------------------------------
+
+
+def test_every_source_writes_where_build_reads_from(tmp_path):
+    """`ape collect --out X` then `ape snapshot build --payloads X` has to line
+    up, or the pipeline is two commands that only look connected."""
+    from placement.collect import SOURCES
+
+    expected = {
+        "locations": tmp_path / "locations.json",
+        "providers": tmp_path / "providers.json",
+        "storage-skus": tmp_path / "storage-skus.json",
+        "pg": tmp_path / "pg" / "westeurope.json",
+        "compute": tmp_path / "compute" / "westeurope.json",
+        "usages": tmp_path / "usages" / "westeurope.json",
+    }
+    assert {s.name for s in SOURCES} == set(expected)
+    for source in SOURCES:
+        region = "westeurope" if source.per_region else None
+        assert source.target(tmp_path, region) == expected[source.name]
+
+
+def test_compute_source_filters_by_location():
+    """The unfiltered Microsoft.Compute/skus response is ~230 MB."""
+    from placement.collect import SOURCES
+
+    compute = next(s for s in SOURCES if s.name == "compute")
+    assert compute.per_region and compute.filter_by_location
+
+
+def test_locations_is_collected_before_anything_per_region():
+    """Per-region sources need the region list, so it cannot be just another job
+    in the pool."""
+    from placement.collect import BOOTSTRAP, SOURCES
+
+    bootstrap = next(s for s in SOURCES if s.name == BOOTSTRAP)
+    assert not bootstrap.per_region
+
+
+def test_payloads_directory_is_inferred(tmp_path):
+    """A tree missing some sources must still build the ones present, since
+    slices are additive."""
+    (tmp_path / "locations.json").write_text("{}", encoding="utf-8")
+    result = runner.invoke(app, ["snapshot", "build", "--payloads", str(tmp_path)])
+    # Reaches ingest (and fails on the empty payload) rather than "no input".
+    assert result.exit_code != 2, result.output
+
+
+def test_az_is_resolved_through_which_not_bare_name():
+    """On Windows `az` is a .cmd shim, so a bare "az" in an argv list is not
+    findable by CreateProcess."""
+    import inspect
+
+    from placement import collect as collect_mod
+
+    source = inspect.getsource(collect_mod)
+    assert 'shutil.which("az")' in source
+    assert '["az",' not in source
