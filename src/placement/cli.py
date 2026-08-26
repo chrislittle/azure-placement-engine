@@ -21,6 +21,7 @@ from placement.contracts import load_requirements
 from placement.snapshot import store
 from placement.snapshot.ingest import PayloadError, read_payload
 from placement.snapshot.ingest import regions as regions_ingest
+from placement.snapshot.ingest import services as services_ingest
 from placement.snapshot.model import WorldSnapshot
 
 app = typer.Typer(help="Azure Placement Engine", no_args_is_help=True, add_completion=False)
@@ -42,14 +43,32 @@ def version() -> None:
 # --------------------------------------------------------------------------
 
 
+COLLECT_HELP = """To collect offline, without this process holding a credential:
+
+  [cyan]SUB=<subscription-id>
+  az rest --method get --url "https://management.azure.com/subscriptions/$SUB/locations?api-version=2022-12-01" > locations.json
+  az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers?api-version=2021-04-01" > providers.json[/cyan]
+"""
+
+
+def _load(path: Path) -> dict:
+    try:
+        payload, encoding = read_payload(path)
+    except PayloadError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    if encoding not in ("utf-8", "utf-8-sig"):
+        console.print(f"[yellow]Note:[/yellow] read {path.name} as {encoding}, not UTF-8.")
+    return payload
+
+
 @snapshot_app.command("build")
 def snapshot_build(
-    from_file: Path | None = typer.Option(
-        None,
-        "--from-file",
-        exists=True,
-        dir_okay=False,
-        help="An ARM locations response collected offline with `az rest`. No credentials needed.",
+    locations: Path | None = typer.Option(
+        None, "--locations", exists=True, dir_okay=False, help="An offline ARM locations response."
+    ),
+    providers: Path | None = typer.Option(
+        None, "--providers", exists=True, dir_okay=False, help="An offline ARM providers response."
     ),
     subscription: str | None = typer.Option(
         None, "--subscription", "-s", help="Fetch live from ARM using the ambient Azure credential."
@@ -58,56 +77,71 @@ def snapshot_build(
         None, "--version", "-v", help="Snapshot version id. Defaults to today's date."
     ),
 ) -> None:
-    """Build (or extend) a snapshot from the ARM locations API."""
-    if not from_file and not subscription:
-        err.print(
-            "[red]Provide --from-file or --subscription.[/red]\n\n"
-            "To collect offline without credentials in this process:\n"
-            "  [cyan]az rest --method get \\\n"
-            '    --url "https://management.azure.com/subscriptions/<id>/locations'
-            '?api-version=2022-12-01" > locations.json[/cyan]"'
-        )
+    """Build or extend a snapshot.
+
+    Slices are additive, so a snapshot can be built up over several runs. Regions
+    must land before services, since resolving provider metadata needs the region
+    table to join against.
+    """
+    if not any((locations, providers, subscription)):
+        err.print("[red]Provide --subscription, or --locations / --providers.[/red]\n")
+        err.print(COLLECT_HELP)
         raise typer.Exit(2)
 
     version_id = snapshot_version or date.today().isoformat()
 
-    if from_file:
+    try:
+        snapshot = store.load(version_id, verify=False)
+    except store.SnapshotError:
+        snapshot = WorldSnapshot(version=version_id)
+
+    if locations or subscription:
+        payload = _load(locations) if locations else regions_ingest.fetch_locations(subscription)  # type: ignore[arg-type]
+        snapshot = regions_ingest.ingest(snapshot, payload, subscription_id=subscription)
+
+    if providers or subscription:
+        if not snapshot.regions:
+            err.print(
+                "[red]Build the region slice first[/red] - service availability is stored as ARM "
+                "region names, and resolving provider metadata needs the region table to join "
+                "against."
+            )
+            raise typer.Exit(2)
+        payload = _load(providers) if providers else services_ingest.fetch_providers(subscription)  # type: ignore[arg-type]
         try:
-            payload, encoding = read_payload(from_file)
-        except PayloadError as exc:
+            snapshot = services_ingest.ingest(snapshot, payload, subscription_id=subscription)
+        except services_ingest.IngestError as exc:
             err.print(f"[red]{exc}[/red]")
             raise typer.Exit(1) from exc
-        if encoding not in ("utf-8", "utf-8-sig"):
-            console.print(f"[yellow]Note:[/yellow] read {from_file.name} as {encoding}, not UTF-8.")
-    else:
-        payload = regions_ingest.fetch_locations(subscription)  # type: ignore[arg-type]
 
-    try:
-        existing = store.load(version_id, verify=False)
-    except store.SnapshotError:
-        existing = WorldSnapshot(version=version_id)
-
-    snapshot = regions_ingest.ingest(existing, payload, subscription_id=subscription)
     path = store.save(snapshot)
 
-    candidates = snapshot.placement_candidates()
-    internal = snapshot.internal_regions()
+    console.print(f"[green]Wrote[/green] {path.relative_to(store.repo_root())}")
 
-    console.print(
-        f"[green]Wrote[/green] {path.relative_to(store.repo_root())}\n"
-        f"  {len(snapshot.regions)} locations returned, "
-        f"{len(snapshot.physical_regions())} physical\n"
-        f"  [bold]{len(candidates)} placement candidates[/bold], "
-        f"{len(snapshot.with_zones(3))} with 3+ availability zones\n"
-        f"  digest {snapshot.digest()}"
-    )
-    if internal:
-        # Worth surfacing every time: these look like ordinary regions in the
-        # API, and eastus2euap reports more zones than any production region.
+    if snapshot.has(regions_ingest.SOURCE):
+        internal = snapshot.internal_regions()
         console.print(
-            f"  [yellow]{len(internal)} internal canary/staging regions excluded:[/yellow] "
-            + ", ".join(sorted(r.name for r in internal))
+            f"  {len(snapshot.regions)} locations returned, "
+            f"{len(snapshot.physical_regions())} physical\n"
+            f"  [bold]{len(snapshot.placement_candidates())} placement candidates[/bold], "
+            f"{len(snapshot.with_zones(3))} with 3+ availability zones"
         )
+        if internal:
+            # Surfaced every time: these look like ordinary regions in the API,
+            # and eastus2euap reports more zones than any production region.
+            console.print(
+                f"  [yellow]{len(internal)} internal canary/staging regions excluded:[/yellow] "
+                + ", ".join(sorted(r.name for r in internal))
+            )
+
+    if snapshot.has(services_ingest.SOURCE):
+        regional = [s for s in snapshot.services.values() if not s.global_only]
+        console.print(
+            f"  [bold]{len(snapshot.services)} resource types[/bold], "
+            f"{len(regional)} with a regional footprint"
+        )
+
+    console.print(f"  digest {snapshot.digest()}")
 
 
 @snapshot_app.command("list")

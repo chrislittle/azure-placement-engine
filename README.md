@@ -41,8 +41,9 @@ Early. Contracts, scenarios, and the first ingester are in; the solver is not.
 - [x] Four acceptance scenarios (`scenarios/`)
 - [x] Snapshot model + store, with digest pinning (`src/placement/snapshot/`)
 - [x] Ingester 1 — region metadata from the ARM `locations` API
-- [ ] Ingester 2 — service availability by region
+- [x] Ingester 2 — service availability by region, from ARM provider metadata
 - [ ] Ingester 3 — capability-level availability
+- [ ] Ingester 4 — retail pricing
 - [ ] Tenant context collectors (offline / live)
 - [ ] Constraint solver, topology composition, scoring
 
@@ -65,12 +66,18 @@ ape snapshot build --subscription <subscription-id>
 this process entirely:
 
 ```bash
-az rest --method get --url "https://management.azure.com/subscriptions/<id>/locations?api-version=2022-12-01" > locations.json
+SUB=<subscription-id>
+az rest --method get --url "https://management.azure.com/subscriptions/$SUB/locations?api-version=2022-12-01" > locations.json
+az rest --method get --url "https://management.azure.com/subscriptions/$SUB/providers?api-version=2021-04-01" > providers.json
 ```
 
 ```bash
-ape snapshot build --from-file locations.json
+ape snapshot build --locations locations.json --providers providers.json
 ```
+
+Slices are additive, so a snapshot can be built up over several runs — but
+regions must land before services, since provider metadata is joined against the
+region table.
 
 Then inspect it:
 

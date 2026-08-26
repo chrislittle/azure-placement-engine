@@ -162,6 +162,37 @@ class Region(Frozen):
 
 
 # --------------------------------------------------------------------------
+# Service availability
+# --------------------------------------------------------------------------
+
+
+class ServiceAvailability(Frozen):
+    """Where one ARM resource type can be deployed.
+
+    Sourced from provider metadata, whose `locations` are *display names* in
+    inconsistent casing ('Uk West', 'italy north', 'SouthEast Asia'), so they are
+    normalised back to ARM region names on ingest.
+
+    Note what is deliberately *not* here: the provider's `registrationState`.
+    That is subscription-specific and belongs to tenant context, not to a world
+    snapshot — an unregistered provider says nothing about whether a service
+    exists in a region.
+    """
+
+    resource_type: str = Field(description="e.g. 'Microsoft.ContainerService/managedClusters'.")
+    regions: list[str] = Field(
+        default_factory=list, description="ARM region names, sorted. Physical regions only."
+    )
+    global_only: bool = Field(
+        default=False,
+        description=(
+            "True for types with no regional footprint — tenant- or global-scoped resources such "
+            "as role definitions. Not a gap in the data, and never a reason to eliminate a region."
+        ),
+    )
+
+
+# --------------------------------------------------------------------------
 # Snapshot
 # --------------------------------------------------------------------------
 
@@ -180,6 +211,9 @@ class WorldSnapshot(BaseModel):
     format: str = SNAPSHOT_FORMAT
     version: str = Field(description="Snapshot version id, e.g. '2026-08-26'.")
     regions: dict[str, Region] = Field(default_factory=dict)
+    services: dict[str, ServiceAvailability] = Field(
+        default_factory=dict, description="Keyed by lowercased ARM resource type."
+    )
     sources: dict[str, SourceRef] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -188,6 +222,46 @@ class WorldSnapshot(BaseModel):
 
     def region(self, name: str) -> Region:
         return self.regions[name]
+
+    def service(self, resource_type: str) -> ServiceAvailability | None:
+        """ARM resource types are case-insensitive in practice, and people type
+        them from memory. Look up accordingly."""
+        return self.services.get(resource_type.lower())
+
+    def service_available(self, resource_type: str, region: str) -> bool | None:
+        """Whether a resource type can be deployed in a region.
+
+        Returns **None for unknown**, which callers must not conflate with False.
+        A type absent from the snapshot has not been shown to be unavailable — it
+        has not been looked at, and that is a risk on the candidate, not an
+        elimination.
+        """
+        entry = self.service(resource_type)
+        if entry is None:
+            return None
+        if entry.global_only:
+            return True
+        return region in entry.regions
+
+    def regions_for_service(self, resource_type: str) -> set[str]:
+        entry = self.service(resource_type)
+        return set(entry.regions) if entry else set()
+
+    def service_coverage(self, region: str) -> float:
+        """Fraction of regionally-deployable resource types available in a region.
+
+        Doubles as a maturity signal and as a warning flag. Azure's
+        restricted-access regions — Germany North, France South, Norway West and
+        similar — need a support request to use, and provider metadata reflects
+        that: they report far thinner coverage than an ordinary region. Low
+        coverage therefore means *either* a genuinely limited region *or* one this
+        subscription cannot see, and both are things a reader must be told before
+        acting on a recommendation.
+        """
+        regional = [s for s in self.services.values() if not s.global_only]
+        if not regional:
+            return 0.0
+        return sum(1 for s in regional if region in s.regions) / len(regional)
 
     def physical_regions(self) -> list[Region]:
         """Logical regions (e.g. 'global') are not placement targets."""

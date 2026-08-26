@@ -40,4 +40,4 @@ def test_validate_rejects_bad_file(tmp_path):
 def test_snapshot_build_requires_a_source():
     result = runner.invoke(app, ["snapshot", "build"])
     assert result.exit_code == 2
-    assert "--from-file" in result.output
+    assert "--subscription" in result.output

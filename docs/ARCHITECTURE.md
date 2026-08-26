@@ -188,6 +188,53 @@ regions, and `germanynorth` has **no availability zones**. There is no in-countr
 secondary that satisfies the constraints — which is precisely the case
 `relaxations` exists to answer rather than returning "infeasible".
 
+### What the service-availability ingest changed
+
+Provider metadata (`resourceTypes[].locations`) is the first slice that can
+eliminate a region for a reason a customer recognises. Two things about the real
+payload matter.
+
+**Locations are display names in inconsistent casing** — a single live response
+contained `'Uk West'`, `'italy north'`, `'spain central'`, `'SouthEast Asia'`,
+`'Norway EAST'`, `'Central Us'`, `'japan East'`. Squeezing whitespace and
+lowercasing turns `"Italy North"` into `italynorth`, which *is* the ARM region
+name, so that normalisation is the join key. A few strings are geographies rather
+than regions (`'UAE'`, `'UK'`) and resolve to nothing; they are recorded as
+unmapped in the source note rather than silently dropped.
+
+**This slice is partly shaped by the collecting subscription, and that is a real
+limitation.** Azure's [restricted-access
+regions](https://learn.microsoft.com/en-us/troubleshoot/azure/general/region-access-request-process)
+— Germany North, France South, Norway West and similar — need a support request
+to use, and provider metadata reflects that unevenly: against a live
+subscription, `Microsoft.ContainerService/managedClusters` listed Germany North
+while `Microsoft.Storage/storageAccounts` did not. So **absence from the provider
+list is a strong signal, not proof.** Capability-level ingest (#3) is what turns
+it into per-region truth for the services that actually matter.
+
+Rather than bury that, it is exposed as `service_coverage(region)` — the fraction
+of regionally-deployable resource types present in a region. Against real data it
+separates cleanly:
+
+| Region | Coverage | Category |
+|---|---:|---|
+| westeurope | 89.5% | Recommended |
+| germanywestcentral | 70.9% | Recommended |
+| italynorth | 59.7% | Recommended |
+| belgiumcentral | 39.8% | Recommended |
+| switzerlandwest | 27.3% | Other |
+| germanynorth | 18.9% | Other |
+
+That is a **better maturity signal than `regionCategory`**, which is only ever
+Recommended or Other: `denmarkeast` and `westeurope` are both "Recommended" while
+differing by more than 50 points of actual service coverage. The
+`region_category` weight should be computed from coverage, with the ARM category
+as a secondary input.
+
+A low-coverage region means *either* a genuinely thin region *or* one this
+subscription cannot see. Both must reach the reader before they act, so it
+belongs on the candidate as a risk either way.
+
 ### Tenant context — customer-specific
 
 Two collection modes, same schema. **Offline** (default) is a JSON export —
