@@ -28,6 +28,34 @@ deployed. Every decision is bounded by the regional cap, and when the cap binds,
 `writes_required` raises it first — a family limit above the regional cap is
 unusable.
 
+## Intake is a workload class
+
+Nobody filling in a vending request knows what `standardEDSv5Family` is. They
+know they need memory-optimised compute.
+
+```hcl
+request = {
+  region = "eastus"
+  vcpus  = 64
+  class  = "memory_optimized"
+}
+```
+
+Eight classes: `general_purpose`, `compute_optimized`, `memory_optimized`,
+`storage_optimized`, `gpu`, `hpc`, `burstable`, `confidential`. `family_allowlist`
+narrows further for a platform team; `family` pins it outright. Most specific wins.
+
+The class is mostly **derived from live SKU capabilities** rather than
+hand-maintained, so new families classify themselves as Azure ships them — GPU
+from the `GPUs` capability, and `MemoryGB / vCPUs` separating compute (2:1),
+general (4:1) and memory (8:1). Four classes can't be derived and are curated by
+name prefix: `L8s_v3` and `E8s_v5` are both 8:1, `B8ms` and `D8s_v5` both 4:1,
+and the H family scatters across all three bands. See
+[`knowledge/vm-series-classes.yaml`](../../knowledge/vm-series-classes.yaml).
+
+It also keeps the read cheap. Projecting 1420 SKUs per region in HCL is the
+expensive part; a class reduces that to a handful of families.
+
 ## Two gates, not one
 
 Quota and access fail independently and have different remedies. A quota group

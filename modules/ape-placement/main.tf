@@ -21,11 +21,25 @@ locals {
 
   # Candidates, narrowed in order: what the request asked for, then what the
   # rule permits.
+  wanted_class = try(var.request.class, null)
+
+  class_matched = local.wanted_class == null ? [] : sort([
+    for f, d in var.pool.families : f if d.class == local.wanted_class
+  ])
+
+  # Narrowed most-specific first: an exact family, then a platform allowlist,
+  # then the customer's workload class, then everything.
   requested_families = (
     var.request.family != null ? [var.request.family] :
     var.request.family_allowlist != null ? var.request.family_allowlist :
+    local.wanted_class != null ? local.class_matched :
     sort(keys(var.pool.families))
   )
+
+  # A class that matches nothing is worth saying out loud -- it means the pool
+  # holds no quota for that kind of workload in this region, which is a
+  # different problem from every candidate being blocked.
+  class_unmatched = local.wanted_class != null && length(local.class_matched) == 0
 
   # Iterate the rule's allowlist rather than filtering by it, so its order
   # survives the intersection. `prefer = "listed_order"` is set on the rule, so
@@ -258,6 +272,7 @@ locals {
   all_blocked_by_access = local.access_checked && length(local.access_permitted) == 0 && (length(local.access_denied) > 0 || length(local.not_offered) > 0)
 
   status = (
+    local.class_unmatched ? "infeasible" :
     local.over_rule_cap ? "blocked_by_rule" :
     local.all_blocked_by_lifecycle ? "blocked_by_lifecycle" :
     local.all_blocked_by_access ? "blocked_by_access" :
@@ -284,6 +299,9 @@ locals {
   ])
 
   reason = (
+    local.class_unmatched ? format(
+      "the subscription holds no %s quota in %s", local.wanted_class, var.request.region,
+    ) :
     local.over_rule_cap ? format("rule %q caps requests at %d vCPUs", local.rule_name, local.rule_cap) :
     local.all_blocked_by_lifecycle ? format(
       "every candidate family is under the capacity growth restriction, which a new subscription cannot deploy at all%s",

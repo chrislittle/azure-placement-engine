@@ -24,6 +24,7 @@ output "decision" {
     status = local.status
     reason = local.reason
 
+    class  = local.wanted_class
     region = var.request.region
     vcpus  = var.request.vcpus
     family = local.chosen

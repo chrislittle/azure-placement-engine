@@ -1,0 +1,60 @@
+# Mapping a customer's workload class to Azure VM families.
+#
+# Nobody filling in a vending request knows what standardEDSv5Family is. They
+# know they need "memory optimised". This is that mapping -- mostly derived from
+# live SKU capabilities so new families classify themselves, with a short
+# curated part for the distinctions capabilities cannot express.
+reviewed: 2026-09-16
+source: >
+  Derived from Microsoft.Compute/skus capabilities across eastus, westeurope,
+  westus2 and centralus, 2026-09-16 (180 distinct VM families), checked against
+  Azure's own documented size categories.
+confidence: high
+recheck_after: 2027-03-31
+
+# Order matters: name overrides first, then GPU, then the ratio bands.
+precedence: [overrides, gpu, ratio]
+
+# What the capability data settles on its own.
+derived:
+  gpu:
+    rule: any size in the family reports a GPUs capability greater than zero
+    note: Unambiguous. No naming needed.
+  ratio:
+    rule: median MemoryGB / vCPUs across the family's sizes
+    bands:
+      compute_optimized: < 3      # F8s_v2 = 2.0
+      general_purpose: 3 to 6     # D8s_v5 = 4.0
+      memory_optimized: > 6       # E8s_v5 = 8.0
+    note: >
+      Crisp for the main axis. The three probes above sit exactly on 2, 4 and 8.
+
+# What the capability data CANNOT settle, and why. These are name prefixes
+# because Azure's series naming is the only reliable signal; matched
+# case-insensitively, since the API returns both `standard...` and `Standard...`.
+overrides:
+  burstable: '^standardB'
+  storage_optimized: '^standardL'
+  hpc: '^standardH'
+  confidential: '^standard(DC|EC)'
+
+why_overrides_are_needed: >
+  Ratios cannot separate these from the bands they land in.
+  L8s_v3 and E8s_v5 are both 8:1, so storage-optimised is indistinguishable from
+  memory-optimised. B8ms and D8s_v5 are both 4:1, so burstable is
+  indistinguishable from general purpose. Local disk size does not split them
+  either -- L8s_v3 reports 80 GB and B8ms 64 GB, while both v5 families report
+  zero. The H family scatters across all three bands (HBv5 at 1.2, HBv3 at 3.8,
+  HX at 8.0) and is a workload class rather than a shape.
+
+# Sanity anchors, verified against live data. If a change to the rules moves any
+# of these, the rules are wrong.
+expected:
+  standardFSv2Family: compute_optimized
+  standardDSv5Family: general_purpose
+  standardESv5Family: memory_optimized
+  standardNCSv3Family: gpu
+  standardLSv3Family: storage_optimized
+  standardBSFamily: burstable
+  standardHBv3Family: hpc
+  standardDCASv5Family: confidential

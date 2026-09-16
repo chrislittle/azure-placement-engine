@@ -21,7 +21,17 @@ import shutil
 import subprocess
 import sys
 
-KNOWLEDGE = pathlib.Path(__file__).resolve().parent.parent / "knowledge" / "vm-series-lifecycle.yaml"
+KNOWLEDGE_DIR = pathlib.Path(__file__).resolve().parent.parent / "knowledge"
+KNOWLEDGE = KNOWLEDGE_DIR / "vm-series-lifecycle.yaml"
+
+# Name prefixes for the classes capability data cannot express.
+# Mirrors knowledge/vm-series-classes.yaml; see that file for why each exists.
+CLASS_OVERRIDES = [
+    ("burstable", r"^standardB"),
+    ("storage_optimized", r"^standardL"),
+    ("hpc", r"^standardH"),
+    ("confidential", r"^standard(DC|EC)"),
+]
 
 REGIONAL_TOTALS = {"cores", "lowprioritycores", "virtualmachines", "virtualmachinescalesets"}
 
@@ -87,6 +97,24 @@ def growth_restricted():
     return set(re.findall(r"\bstandard\w*Family\b", block))
 
 
+def classify(family: str, ratios: list, has_gpu: bool):
+    """Workload class for a family: overrides, then GPU, then memory ratio."""
+    for name, pattern in CLASS_OVERRIDES:
+        if re.match(pattern, family, re.IGNORECASE):
+            return name
+    if has_gpu:
+        return "gpu"
+    if not ratios:
+        return None
+    ratios = sorted(ratios)
+    median = ratios[len(ratios) // 2]
+    if median < 3:
+        return "compute_optimized"
+    if median <= 6:
+        return "general_purpose"
+    return "memory_optimized"
+
+
 def read_skus(subscription: str, region: str) -> dict:
     url = (
         f"https://management.azure.com/subscriptions/{subscription}"
@@ -116,13 +144,31 @@ def project_skus(payload: dict) -> dict:
             else:
                 location_restricted = True
 
+        caps = {c["name"]: c["value"] for c in sku.get("capabilities") or []}
+        try:
+            vcpus, memory = float(caps.get("vCPUs", 0)), float(caps.get("MemoryGB", 0))
+        except (TypeError, ValueError):
+            vcpus, memory = 0.0, 0.0
+        try:
+            gpus = float(caps.get("GPUs") or 0)
+        except (TypeError, ValueError):
+            gpus = 0.0
+
         entry = {"zones": zones, "restricted_zones": sorted(restricted)}
         if location_restricted:
             entry["location_restricted"] = True
         if reason:
             entry["restriction_reason"] = reason
-        families.setdefault(family, {"sizes": {}})["sizes"][sku["name"]] = entry
-    return families
+        fam = families.setdefault(family, {"sizes": {}, "_ratios": [], "_gpu": False})
+        fam["sizes"][sku["name"]] = entry
+        if vcpus > 0:
+            fam["_ratios"].append(memory / vcpus)
+        fam["_gpu"] = fam["_gpu"] or gpus > 0
+
+    classes = {}
+    for name, fam in families.items():
+        classes[name] = classify(name, fam.pop("_ratios"), fam.pop("_gpu"))
+    return families, classes
 
 
 if __name__ == "__main__":
@@ -137,7 +183,12 @@ if __name__ == "__main__":
         if name in restricted:
             entry["lifecycle"] = "growth_restricted"
 
-    print(json.dumps({
-        "pool": pool,
-        "sku_access": project_skus(read_skus(sub, region)),
-    }, indent=2))
+    sku_access, classes = project_skus(read_skus(sub, region))
+
+    # Workload class is a property of the family, so it belongs on the pool
+    # entry the module ranks -- not on the access data.
+    for name, entry in pool["families"].items():
+        if classes.get(name):
+            entry["class"] = classes[name]
+
+    print(json.dumps({"pool": pool, "sku_access": sku_access}, indent=2))

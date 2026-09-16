@@ -6,8 +6,12 @@ variable "request" {
   EOT
 
   type = object({
-    region           = string
-    vcpus            = number
+    region = string
+    vcpus  = number
+    # What a customer actually says. Narrowed further by `family_allowlist`
+    # (platform escape hatch) or `family` (I know exactly what I want), either
+    # of which takes precedence.
+    class            = optional(string)
     family           = optional(string)
     family_allowlist = optional(list(string))
     environment      = optional(string, "prod")
@@ -104,6 +108,10 @@ variable "pool" {
       limit     = number
       used      = number
       available = optional(number)
+
+      # Workload class, derived from SKU capabilities by the caller.
+      # See knowledge/vm-series-classes.yaml.
+      class = optional(string)
 
       # Where the series sits in its lifecycle. `growth_restricted` is the July
       # 2026 capacity restriction: quota frozen at what is already approved, and
