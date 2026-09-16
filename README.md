@@ -61,10 +61,11 @@ where it slots into vending, and the GitHub Actions to wire it up.
 ## Status
 
 Read, decide and apply are built and working against live subscriptions, in both
-Terraform and Bicep. The previous Python engine that ranked regions is
-superseded and preserved at the `v0-advisory-engine` tag.
+Terraform and Bicep. A previous Python implementation ranked regions and
+recommended placements for a human to act on; it is superseded and not
+published.
 
-- [x] `ape-placement` — decides. 40 tests, no subscription needed
+- [x] `ape-placement` — decides. 47 tests, no subscription needed
 - [x] `ape-read` — live quota, SKU availability and region access, all Terraform
 - [x] `ape-apply` — write quota, with the refusal semantics documented
 - [x] `examples/vending-stage-2` — the handoff contract and a sample intake

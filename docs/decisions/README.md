@@ -6,9 +6,9 @@ One file per decision, `NNNN-slug.md`, append-only — supersede rather than edi
 - [0001 — Terraform is the reference implementation](0001-terraform-is-the-reference-implementation.md)
 
 Decisions taken before the pivot to IaC modules described an advisory engine
-that ranked Azure regions. They are **superseded**, and preserved at the
-`v0-advisory-engine` tag rather than in the tree:
+that ranked Azure regions and recommended placements for a human to act on.
+They are **superseded** — this project decides and writes.
 
-```bash
-git show v0-advisory-engine:docs/ARCHITECTURE.md
-```
+That implementation is not published. It is kept on the author's machine at the
+`v0-advisory-engine` tag, so a reference to it here is history, not something
+you can check out.
