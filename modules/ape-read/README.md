@@ -1,8 +1,12 @@
 # `ape-read`
 
-Reads live Azure state and projects it into the `pool` and `sku_access` inputs
-[`ape-placement`](../ape-placement) expects. All Terraform — no pipeline step,
-no generated tfvars.
+Reads the quota, the SKU availability and the region access for one subscription
+in one region. Produces the two inputs that
+[`ape-placement`](../ape-placement) needs.
+
+This module reads. It creates and changes nothing.
+
+## Usage
 
 ```hcl
 module "read" {
@@ -10,51 +14,54 @@ module "read" {
   subscription_id = var.subscription_id
   region          = "eastus"
 }
-
-module "placement" {
-  source     = "../../modules/ape-placement"
-  request    = var.request
-  pool       = module.read.pool
-  sku_access = module.read.sku_access
-}
 ```
 
-This module talks to Azure and holds no logic worth testing. `ape-placement`
-holds all the logic and talks to nothing. That split is deliberate: the
-decisions stay testable against fixtures with no subscription.
+## Inputs
 
-## Region access has to be probed first
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `subscription_id` | string | **required** | Subscription to read. |
+| `region` | string | **required** | Azure region, for example `eastus`. |
+| `knowledge_dir` | string | `null` | Path to the `knowledge/` directory. Defaults to the copy beside this module. |
 
-Asking Compute usages about a region the subscription lacks returns HTTP 400
-`NoRegisteredProviderFound` — and a Terraform data source **cannot catch that**.
-It fails the whole plan, so the module could never report the condition.
+Set `knowledge_dir` when Terraform copies this module. A non-local module source
+places it under `.terraform/modules`, which breaks the relative path.
 
-So the first read is the `Microsoft.Compute` provider registration, whose
-`resourceTypes[].locations` is the list of regions this subscription may use.
-Both expensive reads are then gated on `count`, and an unreachable region
-yields an empty pool with `region_accessible = false` instead of a broken plan.
+## Outputs
 
-`Microsoft.Compute/skus` cannot substitute: for Germany North it returns 866 VM
-SKUs of which 796 carry no restriction at all, for a subscription that cannot
-deploy there.
+| Name | Type | Description |
+|---|---|---|
+| `pool` | object | Quota state. Pass to `ape-placement`'s `pool`. |
+| `sku_access` | map | Deployable SKU sizes and their zones. Pass to `ape-placement`'s `sku_access`. |
+| `region_accessible` | bool | `false` when the subscription cannot use the region. |
+| `provider_registered` | bool | `false` when `Microsoft.Compute` is not registered yet. |
 
-## Curated knowledge is read, not copied
+## Region access is read first
 
-`yamldecode(file(...))` reads `knowledge/` directly, so the growth-restricted
-family list and the class rules have exactly one home. Override `knowledge_dir`
-only when consuming this module from somewhere the relative path can't reach.
+Compute usages returns HTTP 400 `NoRegisteredProviderFound` for a region the
+subscription cannot use. A Terraform data source cannot catch that error. It
+fails the whole plan.
+
+This module therefore reads the `Microsoft.Compute` provider registration first.
+The registration lists the regions the subscription can use. Both larger reads
+then run only when the region is in that list. An unusable region produces an
+empty pool and `region_accessible = false`.
+
+`Microsoft.Compute/skus` cannot detect a missing region grant. It returns a full
+catalogue for regions the subscription cannot use.
+
+## Curated data
+
+The module reads `knowledge/vm-series-lifecycle.yaml` with `yamldecode`. The
+list of growth-restricted families has one source.
 
 ## Cost
 
-About **7.5 seconds** for a region: roughly 1500 SKUs and 230 usage entries
-fetched and projected, including the family grouping, which is O(families x
-SKUs) because HCL has no group-by. Acceptable for a vending operation.
+About 7.5 seconds for one region. The module reads roughly 1500 SKUs and 230
+usage entries, then groups them by family.
 
-Verified identical to the Python reader across East US, West Europe, Central US
-and West Central US — same family counts, same growth-restricted counts, same
-chosen family.
+## PowerShell equivalent
 
-## `scripts/read_pool.py`
-
-Superseded for the live path, kept for generating test fixtures offline and as
-the reference the Terraform projection was checked against.
+[`powershell/ApeRead.psm1`](../../powershell/ApeRead.psm1) performs the same
+reads for the Bicep path. See
+[the manual](../../docs/GUIDE.md#why-bicep-works-differently).

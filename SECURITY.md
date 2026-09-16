@@ -2,10 +2,11 @@
 
 ## What this project touches
 
-APE reads quota and SKU availability for a subscription, and writes vCPU quota
-limits. It does not create, modify or delete any other Azure resource, and it
-stores no credentials — both paths use whatever the environment is signed in as,
-`az login` locally or OIDC federated credentials in CI.
+APE reads quota and SKU availability for a subscription. It writes vCPU quota
+limits. It creates, changes and deletes no other Azure resource.
+
+APE stores no credentials. Both paths use the identity the environment is
+already signed in as: `az login` locally, or OIDC federated credentials in CI.
 
 The identity it runs as needs **Reader** and **Quota Request Operator** on the
 target subscription. `Quota Request Operator` is a built-in role scoped to

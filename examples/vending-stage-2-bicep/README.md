@@ -15,9 +15,8 @@ written. It reads the **same intake file** as the Terraform path.
 
 Bicep cannot read quota state — see
 [decision 0001](../../docs/GUIDE.md#why-bicep-works-differently).
-`existing` fails the whole deployment with `NotFound` when a resource is absent,
-and `deploymentScripts` is idempotent, so a quota read would be silently stale
-from the first deployment onward.
+`existing` fails the whole deployment with `NotFound` when a resource is absent.
+`deploymentScripts` is idempotent, so a quota read would keep its first value.
 
 So the shape is:
 
@@ -29,12 +28,11 @@ Bicep:       ape-apply.bicep    ->  write the quota
 On the Terraform path all three steps are Terraform. Here only the last one can
 be Bicep.
 
-The script forms no opinion of its own about what should happen — it serialises
-`writes_required` unchanged, so the Bicep template receives exactly what the
-Terraform module would have applied.
+The script makes no decision of its own. It serialises `writes_required`
+unchanged, so the Bicep template receives what the Terraform module would
+apply.
 
 ## Drift
 
 The decision logic exists twice. [`conformance/`](../../conformance) holds one
-set of scenarios both implementations must pass, and it has already caught three
-divergences that would otherwise have shipped. Run it in CI.
+set of scenarios. Both implementations must pass all of them. Run it in CI.

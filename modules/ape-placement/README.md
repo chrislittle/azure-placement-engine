@@ -1,209 +1,195 @@
 # `ape-placement`
 
-Decides which VM family a vended subscription should get, and what its quota
-limit should be set to. **Holds no resources** — it reads a request, pool state
-its caller fetched, and the platform team's rules, and returns a decision plus
-the writes that would realise it. Applying them is a separate concern.
+Chooses a VM family for a subscription and calculates the quota limit to set.
+Returns the decision, the reason for it, and the reason each other family was
+rejected.
 
-That split is what makes it testable: `terraform test` runs the whole decision
-surface against fixtures, with no subscription and no credentials.
+This module contains no resources. It reads nothing from Azure. The caller
+supplies the state, usually from [`ape-read`](../ape-read).
+
+That separation makes the whole decision testable without a subscription:
 
 ```bash
 terraform test
 ```
 
-## The regional cap
-
-The one thing to understand before reading the logic. `regional_cores_limit` is
-a region-wide vCPU cap that sits under every family, and it is **not** the sum
-of the family limits — it is usually far smaller. A live PAYG subscription reads:
-
-```
-cores  limit=10          <- the real constraint
-97 families, each reporting limit=10..12
-```
-
-Ranking on family headroom alone would find hundreds of vCPUs that cannot be
-deployed. Every decision is bounded by the regional cap, and when the cap binds,
-`writes_required` raises it first — a family limit above the regional cap is
-unusable.
-
-## Intake speaks Azure's vocabulary
-
-Nobody filling in a vending request knows what `standardEDSv5Family` is. They
-know they need memory-optimised compute.
+## Usage
 
 ```hcl
-request = {
-  region       = "eastus"
-  vcpus        = 64
-  category     = "MemoryOptimized"
-  architecture = "x64"        # optional
-  burstable    = "Excluded"   # optional
+module "placement" {
+  source = "../../modules/ape-placement"
+
+  request = {
+    region   = "eastus"
+    vcpus    = 64
+    category = "MemoryOptimized"
+  }
+
+  pool       = module.read.pool
+  sku_access = module.read.sku_access
+  rules      = var.placement_rules
 }
 ```
 
-`category` takes **Azure Compute Fleet's `vmCategories` values** —
-`GeneralPurpose`, `ComputeOptimized`, `MemoryOptimized`, `StorageOptimized`,
-`GpuAccelerated`, `FpgaAccelerated`, `HighPerformanceCompute`. This project does
-not use Compute Fleet; it borrows the vocabulary because Azure already publishes
-a taxonomy for exactly this question, and a parallel one would be jargon.
+## Inputs
 
-`architecture`, `burstable` and `confidential_computing` are **attributes, not
-categories**, matching how Azure models them — a burstable family is also
-general-purpose shaped, so making it a category would hide it from anyone asking
-for general purpose. `family_allowlist` narrows further for a platform team;
-`family` pins it outright. Most specific wins.
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `request` | object | **required** | What the workload needs. See below. |
+| `pool` | object | **required** | Quota state for the region. From `ape-read`. |
+| `sku_access` | map | `{}` | Deployable sizes and zones. Empty skips the access check. |
+| `rules` | list(object) | `[]` | Platform business rules. |
 
-Membership is **derived from live SKU capabilities**, so new families classify
-themselves as Azure ships them: `GPUs`, `RdmaEnabled` for HPC,
-`ConfidentialComputingType`, `CpuArchitectureType`, and `MemoryGB / vCPUs` —
-which Azure itself names `memoryInGiBPerVCpu` — separating compute (2:1),
-general (4:1) and memory (8:1). Only two rules are name-based: FPGA, because
-NP-series reports a `GPUs` capability despite its accelerators being FPGAs, and
-StorageOptimized, because `L8s_v3` and `E8s_v5` are both 8:1. See
-[`knowledge/vm-series-classes.yaml`](../../knowledge/vm-series-classes.yaml).
+### `request`
 
-It also keeps the read cheap. Projecting 1420 SKUs per region in HCL is the
-expensive part; a class reduces that to a handful of families.
+| Field | Type | Default | Values |
+|---|---|---|---|
+| `region` | string | **required** | Azure region name. |
+| `vcpus` | number | **required** | Greater than 0. |
+| `category` | string | any | `GeneralPurpose`, `ComputeOptimized`, `MemoryOptimized`, `StorageOptimized`, `GpuAccelerated`, `FpgaAccelerated`, `HighPerformanceCompute` |
+| `architecture` | string | any | `x64`, `Arm64` |
+| `burstable` | string | any | `Excluded`, `Required` |
+| `confidential_computing` | string | any | `Excluded`, `Required` |
+| `family_allowlist` | list(string) | all | Azure family names. |
+| `family` | string | none | One Azure family name. |
+| `environment` | string | `prod` | Selects which rule applies. |
+| `new_subscription` | bool | `true` | `false` for a subscription that already holds quota. |
+| `placement.type` | string | `regional` | `regional`, `zonal`, `zone_redundant` |
+| `placement.zones` | list(string) | none | Required when `type` is `zonal`. |
+| `placement.zone_count` | number | `3` | Used when `type` is `zone_redundant`. |
 
-## Region access is the outermost gate
+Three fields narrow the candidates. The most specific wins: `family`, then
+`family_allowlist`, then `category` and the attribute fields.
 
-A subscription can be denied a whole region. Only the **quota read** reveals it:
-`Microsoft.Compute/locations/{region}/usages` answers `NoRegisteredProviderFound`,
-at every API version, which reads like a stale api-version and is not.
+### `pool`
 
-`Microsoft.Compute/skus` cannot see it and actively misleads. For Germany North,
-which this subscription cannot deploy to, the SKU API returned **866 VM SKUs of
-which 796 carried no restriction at all**. Anything keying on SKU restrictions
-would call the region wide open.
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `regional_cores_limit` | number | **required** | Region-wide vCPU cap. |
+| `regional_cores_used` | number | **required** | vCPUs in use. |
+| `region_accessible` | bool | `true` | `false` blocks everything below it. |
+| `provider_registered` | bool | `true` | `false` gives `not_ready`. |
+| `families` | map(object) | **required** | One entry for each family. |
 
-So `pool.region_accessible = false` short-circuits everything — no lifecycle,
-access or quota reasoning, and no writes. The remediation is a region access
-request, and no quota action substitutes for it.
+Each family entry:
 
-## Two gates, not one
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `limit` | number | **required** | Current quota limit. |
+| `used` | number | **required** | vCPUs in use. |
+| `available` | number | `null` | Spare quota in a quota group. `null` means no pool. |
+| `category` | string | `null` | Azure vmCategory. |
+| `lifecycle` | string | `current` | `current`, `previous_gen`, `capacity_limited`, `growth_restricted`, `retirement_announced` |
+| `successors` | list(string) | `[]` | Replacement families, named in the reason. |
+| `burstable` | bool | `false` | |
+| `confidential_computing` | bool | `false` | |
+| `architectures` | list(string) | `[]` | `x64`, `Arm64`, or both. |
 
-Quota and access fail independently and have different remedies. A quota group
-grants neither regional nor zonal access, so allocating quota for a family the
-subscription cannot deploy buys a guaranteed failure.
+### `rules`
 
-**APE checks access; it does not manage it.** Closing an access gap is a support
-request with lead time, which no module can do. What the module does is refuse
-to allocate against a gap and say what would lift it — `NotAvailableForSubscription`
-is requestable, `QuotaId` means the offer excludes the SKU and no ticket will
-change it.
+Evaluated in order. The first rule whose `environments` matches is used. A rule
+with no `environments` matches every request, so place it last.
 
-### The trap in `Microsoft.Compute/skus`
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Reported in the decision. |
+| `environments` | list(string) | Which `request.environment` values this rule applies to. |
+| `family_allowlist` | list(string) | Limits candidates to this list. |
+| `family_denylist` | list(string) | Removes these candidates. |
+| `max_vcpus` | number | Larger requests give `blocked_by_rule`. |
+| `prefer` | string | `most_headroom` (default), `least_headroom`, `listed_order`. |
 
-`locationInfo[].zones` reads like "zones you can deploy into". It is not.
-`restrictions[]` removes zones, and **the restricted set is not constrained to
-be a subset of the published set**:
+`listed_order` uses the order of the rule's own `family_allowlist`.
 
-```
-Standard_D1, East US:
-  zones             = ["2", "3"]      <- published
-  restricted_zones  = ["1", "2", "3"] <- restricted
-  effective         = []              <- nothing deployable
-```
+## Outputs
 
-Pass both lists raw; the module does the subtraction, because the subtraction is
-where the failure mode lives. On one live subscription, 60 of 1420 VM SKUs
-publish zones that no restriction leaves usable.
+| Name | Type | Description |
+|---|---|---|
+| `decision` | object | The decision and the reasoning. |
+| `writes_required` | list | Pass to [`ape-apply`](../ape-apply). Empty when no write is needed. |
 
-### Placement type changes eligibility
+### `decision`
 
-`request.placement.type` is not a preference — it decides which families are
-eligible at all:
-
-| type | needs |
+| Field | Description |
 |---|---|
-| `regional` | no `Location` restriction |
-| `zonal` | every zone in `zones` usable for at least one size |
-| `zone_redundant` | at least `zone_count` distinct usable zones for one size |
+| `status` | See the table below. |
+| `reason` | One sentence explaining the status. |
+| `family` | The chosen family, or `null`. |
+| `category` | The requested category, or `null`. |
+| `target_limit` | The absolute limit to set, or `null`. |
+| `regional` | The region-wide cap, its headroom, and whether it must be raised. |
+| `lifecycle` | Families refused by the growth restrictions, and their successors. |
+| `access` | Region and zone access, and the remediation for a refusal. |
+| `considered` | Each candidate, its numbers, and why it lost. |
+| `rule_applied` | The rule used, or `(none)`. |
+| `unknown_families` | Named families the pool does not contain. |
 
-On a live subscription, `standardDFamily` is **satisfied** regionally and
-**blocked_by_access** for zone 2 — the same family, region and subscription.
+### `status`
 
-> **Assumption, not documented by Microsoft:** a `Zone`-type restriction blocks
-> zonal placement but leaves regional placement available. It is why the API
-> distinguishes `Zone` from `Location` at all. See
-> [`knowledge/zone-restrictions.yaml`](../../knowledge/zone-restrictions.yaml);
-> if it proves false, the regional branch in `family_deployable` is the one line
-> to change.
+| Value | Meaning | Action |
+|---|---|---|
+| `satisfied` | Existing quota covers the request. | None. |
+| `needs_allocation` | A quota group covers the shortfall. | Apply. Allocation is self-service. |
+| `needs_increase` | A quota limit increase is needed. | Apply. Azure evaluates the request. It is not a promise. |
+| `not_ready` | `Microsoft.Compute` is not registered. | Wait, then retry. |
+| `blocked_by_region` | The subscription cannot use the region. | Raise a region access request. |
+| `blocked_by_lifecycle` | Every candidate is growth-restricted. | Use a successor family. The reason names them. |
+| `blocked_by_access` | No candidate can deploy here. | Read `access.remediation`. |
+| `blocked_by_rule` | A business rule refused the request. | Change the request or the rule. |
+| `infeasible` | No candidate can reach the requested size. | Change region, family or size. |
 
-### Quota is not evidence a family exists
+## Behaviour
 
-A family can report a healthy quota limit in a region where Azure offers no
-sizes of it. On a live subscription, **14 of the 97 families holding quota in
-East US had zero SKUs there** — NC v1, H, basicA, the Promo families. Ranking on
-quota alone picks one of these and produces a placement with nothing to deploy.
+### The regional cap
 
-So `sku_access` must be **complete for the region or empty**. When supplied it is
-authoritative: `Microsoft.Compute/skus` lists every SKU Azure has in the region
-including restricted ones, so absence means the family is not offered. That
-lands in `access.not_offered`, distinct from `access.denied`, because no support
-ticket will change it.
+`regional_cores_limit` applies to every family. It is not the sum of the family
+limits. It is usually much smaller. A subscription can report a cap of 10 vCPUs
+and 97 families that each report 10 to 12.
 
-Leave `sku_access` empty to skip the check. The decision then reports
-`access.verified = false` rather than implying it passed.
+Ranking on family headroom alone therefore finds vCPUs that cannot be deployed.
+Every decision respects the cap. When the cap binds, `writes_required` raises it
+first, because a family limit above the cap cannot be used.
 
-### Some regions have no zones
+### Quota is not proof a family exists
 
-West Central US reports 916 VM SKUs and not one availability zone. A zonal
-request there is refused with `access.region_zonal = false` and
-`requestable = false` — there is no ticket that adds zones to a region, and
-saying otherwise sends someone after something they cannot get.
+A family can hold quota in a region where Azure offers no sizes of it. Supply
+`sku_access` and the module treats an absent family as not offered. It reports
+those in `access.not_offered`, separately from `access.denied`, because no
+support request changes them.
 
-## Status values
+`sku_access` must be complete for the region, or empty.
 
-| `status` | Meaning |
-|---|---|
-| `satisfied` | Existing quota covers it. No writes. |
-| `needs_allocation` | A pool can cover the shortfall. Allocation is self-service and will succeed. |
-| `needs_increase` | A quota limit increase is required. Increases are **evaluated, not granted**, and are refused when regional capacity is short — this is not a promise. |
-| `blocked_by_rule` | A business rule refused it. |
-| `blocked_by_access` | No candidate family can deploy here. Quota would not help — this needs an access request, or is final if the offer excludes it. |
-| `infeasible` | No candidate family can reach the requested size. |
+### Zones
 
-The `needs_allocation` / `needs_increase` split is the whole point. A null
-`available` on a family means there is no pool behind the subscription, and the
-module treats that as **unproven rather than unlimited** — it will not imply a
-guarantee that Azure has not given.
+`sku_access` carries the published zones and the restricted zones for each size.
+The module subtracts them. The restricted list is not a subset of the published
+list, so a size can publish two zones, restrict three, and leave none.
 
-## Rules
+A `Zone` restriction blocks zonal placement only. Regional placement of the same
+family still works.
 
-Evaluated in order; the first whose `environments` matches wins. A rule with no
-`environments` matches everything, so put the catch-all last.
+Some regions have no zones. The module reports `access.region_zonal = false` and
+`access.requestable = false`, because no support request adds zones to a region.
 
-```hcl
-rules = [
-  {
-    name            = "dev stays off GPU and stays small"
-    environments    = ["dev"]
-    family_denylist = ["standardNCFamily"]
-    max_vcpus       = 16
-  },
-  {
-    name             = "prod uses approved families, cheapest first"
-    environments     = ["prod"]
-    family_allowlist = ["standardDSv5Family", "standardDSv3Family"]
-    prefer           = "listed_order"
-  },
-]
-```
+### Growth-restricted families
 
-`prefer` is `most_headroom` (default), `least_headroom`, or `listed_order` —
-the order the rule's own allowlist names them, which is how a platform team says
-"use up the cheap family first".
+A new subscription cannot deploy the growth-restricted series at all. An
+existing subscription can deploy them within quota it already holds, but cannot
+obtain more. Set `request.new_subscription` correctly.
 
-## Losers are recorded
+### Unproven capacity
 
-`decision.considered` carries every candidate with its numbers and why it lost.
-A placement that cannot say why it rejected the alternatives is not auditable,
-and "why not that family" is most of what anyone actually asks.
+`available = null` means no quota group sits behind the subscription. The module
+treats that as unproven, not as unlimited. This is what separates
+`needs_allocation` from `needs_increase`.
 
-## Live example
+### Rejected candidates are recorded
 
-[`examples/vending-stage-2`](../../examples/vending-stage-2) runs it against a
-real subscription, reading state with [`ape-read`](../ape-read).
+`decision.considered` lists every candidate with its numbers and the reason it
+lost. "Why not that family" is the common question.
+
+## PowerShell equivalent
+
+[`powershell/ApePlacement.psm1`](../../powershell/ApePlacement.psm1) implements
+the same decision for the Bicep path. Both pass the scenarios in
+[`conformance/`](../../conformance).

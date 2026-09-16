@@ -7,12 +7,12 @@ APE ships two implementations of the same decision:
 | **Terraform** | `modules/ape-read` | `modules/ape-placement` | `modules/ape-apply` |
 | **Bicep** | `powershell/ApeRead.psm1` | `powershell/ApePlacement.psm1` | `bicep/ape-apply.bicep` |
 
-Bicep cannot read quota state (see [the manual](../docs/GUIDE.md#why-bicep-works-differently)),
-so on that path PowerShell reads and decides and Bicep only writes. That means
-**the decision logic exists twice**, which is a real cost.
+Bicep cannot read quota state. See
+[the manual](../docs/GUIDE.md#why-bicep-works-differently). On that path
+PowerShell reads and decides, and Bicep writes.
 
-This directory is how that cost is contained. One set of scenarios; both
-implementations must produce the same answer.
+The decision logic therefore exists twice. This directory holds one set of
+scenarios. Both implementations must produce the same answer for every one.
 
 ```bash
 # Terraform — no subscription needed, one apply covers every scenario
@@ -45,26 +45,25 @@ what it should produce.
 Only the keys present in `expect` are asserted, so a scenario can pin one
 behaviour without restating everything else.
 
-## It has already earned its keep
+## What it has caught
 
-Writing the PowerShell implementation against these scenarios caught three
-divergences that would otherwise have shipped:
+Writing the PowerShell implementation against these scenarios found three
+defects before release.
 
-- **Tie-breaking.** Terraform ranked with `reverse(sort())`, which reverses the
-  family name order as well as the headroom order, so on a headroom tie it chose
-  the *last* family alphabetically. PowerShell's `Sort-Object` is
-  case-insensitive and chose a different one. On live East US data the two
-  picked different families. Both now build the same padded sort key and compare
-  it ordinally, and `tie-break-is-ordinal.json` pins it.
+**Tie-breaking.** Terraform ranked with `reverse(sort())`. That reverses the
+family name order as well as the headroom order, so a headroom tie selected the
+last family alphabetically. PowerShell used `Sort-Object`, which ignores case.
+The two implementations chose different families. Both now build the same padded
+sort key and compare it as ordinal text.
 
-- **`zone_redundant` placement.** Broken in PowerShell and covered by no
-  scenario, so only the live driver hit it. Two scenarios now cover it.
+**`zone_redundant` placement.** The PowerShell implementation was wrong and no
+scenario covered it. Two scenarios now do.
 
-- **A real bug in the Terraform module**, found while writing the fixtures:
-  `region_zonal` was computed from *effective* zones, so a perfectly zonal
-  region looked non-zonal as soon as every family examined happened to be fully
-  zone-restricted — and the customer was then told no ticket could help, which
-  is the opposite of the truth. It now reads published zones.
+**A defect in the Terraform module.** `region_zonal` was calculated from
+effective zones instead of published zones. A region with zones appeared to have
+none whenever every family examined was fully restricted. The module then told
+the user that no support request would help, which was incorrect. It now reads
+published zones.
 
 ## Adding one
 

@@ -12,10 +12,10 @@ enforcing the platform team's business rules about who gets what.
 It runs as a **second stage** after vending, taking the new `subscription_id` as
 its only handoff. Microsoft's [subscription vending
 guidance](https://learn.microsoft.com/en-us/azure/architecture/landing-zones/subscription-vending)
-lists the deployment pipeline's tasks as Identity, Governance, Networking,
-Budgets and Reporting — quota is not among them, and CAF names the gap without
-filling it: *"the quota request can fail, so you should run a script to handle
-any errors."*
+lists five deployment tasks: identity, governance, networking, budgets and
+reporting. Quota is not one of them. The Cloud Adoption Framework states the
+problem but does not solve it: *"the quota request can fail, so you should run a
+script to handle any errors."*
 
 ```mermaid
 flowchart LR
@@ -47,13 +47,13 @@ Bicep only writes. The decision logic therefore exists twice, and
 [`conformance/`](conformance/) is what stops the two drifting — one set of
 scenarios both must pass.
 
-Built as **Terraform and Bicep (AVM) modules**, composed with
+Built as Terraform and Bicep (AVM) modules. It composes with
 [`Azure/avm-ptn-sub-vending/azurerm`](https://registry.terraform.io/modules/Azure/avm-ptn-sub-vending/azurerm/latest)
 and [`avm/ptn/lz/sub-vending`](https://github.com/Azure/bicep-registry-modules/tree/main/avm/ptn/lz/sub-vending).
-Neither does anything with quota today, which is the gap this fills.
-(`Azure/lz-vending/azurerm` is archived — it migrated to the AVM module above.)
-There is no service and no state of its own — Azure's own APIs are the source of
-truth, and the modules read, decide, and write.
+Neither of those handles quota. That is the gap APE fills.
+
+APE has no service and no state of its own. Azure's APIs are the source of
+truth. The modules read, decide and write.
 
 **[Read the manual](docs/GUIDE.md)** — how to run it, what the answers mean,
 where it slots into vending, and the GitHub Actions to wire it up.
@@ -93,13 +93,13 @@ separate concerns.
 ## Scope
 
 **v1 is quota only.** The capacity buffer is a second layer, deferred until the
-first is proven — it depends on a preview feature, and a capacity reservation
-binds to an exact VM size, which makes it a poor fit for the flexible-intake case
-that is most of the value.
+first is proven. It depends on a preview feature. A capacity reservation also
+binds to one exact VM size, which does not suit a request that states only a
+category.
 
-The quota backend is swappable: per-subscription `Microsoft.Quota` works today
-and is testable on an ordinary subscription, while quota groups change where the
-headroom comes from rather than how the decision is made.
+The quota backend is swappable. Per-subscription `Microsoft.Quota` works today
+and can be tested on an ordinary subscription. Quota groups change where the
+headroom comes from, not how the decision is made.
 
 ## Layout
 

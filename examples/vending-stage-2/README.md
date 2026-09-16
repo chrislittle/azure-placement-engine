@@ -9,7 +9,7 @@ Reporting**. Quota is not among them. CAF names the gap without filling it:
 
 > the quota request can fail, so you should run a script to handle any errors
 
-APE is that script, as Terraform modules rather than a script.
+APE is that script, written as Terraform modules.
 
 ## Where it runs
 
@@ -31,16 +31,15 @@ passthrough, and with this split it needs neither.
 
 ## Why two stages rather than one module
 
-A brand-new subscription does not exist at plan time, so a single-stage module
-would defer every read to apply and the placement decision would never appear in
-a plan. Run separately, stage 2 plans against a subscription that already
+A new subscription does not exist when Terraform makes a plan. A single-stage
+module would defer every read until apply. The placement decision would then
+never appear in a plan. Run separately, stage 2 plans against a subscription that already
 exists: the chosen family, the quota to be written, and why every other family
 lost are all visible **before** anything is written.
 
-It also matches the guidance's own advice to use a dedicated state file per
-application landing zone subscription, and it sidesteps the provider
-registration race — by the time stage 2 runs, `Microsoft.Compute` registration
-has settled.
+This also matches the guidance, which recommends a dedicated state file for each
+application landing zone subscription. It avoids the provider registration race
+as well. Registration completes during stage 1.
 
 ## Running it
 
@@ -87,7 +86,7 @@ class  : memory_optimized
 considered: 21 families, 11 refused by the capacity growth restrictions
 ```
 
-Which is correct, and is the point: the answer arrives at vending time with the
-reasoning attached, rather than as a failed deployment weeks later.
+That is the correct answer. It arrives during vending, with the reasoning
+attached, instead of as a failed deployment later.
 
 [vending]: https://learn.microsoft.com/en-us/azure/architecture/landing-zones/subscription-vending

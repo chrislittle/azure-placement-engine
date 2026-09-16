@@ -1,58 +1,81 @@
 # `ape-apply`
 
-Writes the quota that a placement decision asked for. Takes
-[`ape-placement`](../ape-placement)'s `writes_required` unchanged.
+Writes the quota limits a placement decision asked for. Takes
+[`ape-placement`](../ape-placement)'s `writes_required` without change.
+
+## Usage
 
 ```hcl
 module "apply" {
   source          = "../../modules/ape-apply"
   subscription_id = var.subscription_id
-  region          = var.region
+  region          = "eastus"
   writes_required = module.placement.writes_required
 }
 ```
 
-Empty `writes_required` means the decision needs nothing written, and this
-module does nothing. Set `enabled = false` to evaluate a vending without
-writing.
+An empty `writes_required` means the decision needs no write. The module then
+creates nothing.
 
-## A refused write fails the apply, on purpose
+## Inputs
 
-Terraform has **no way to catch a resource error**, so a quota refusal cannot be
-turned into a warning. That is also the right outcome: a vended subscription
-that cannot run its workload is a failure, not a caveat.
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `subscription_id` | string | **required** | Subscription whose quota is written. |
+| `region` | string | **required** | Azure region the quota applies to. |
+| `writes_required` | list(object) | `[]` | From `ape-placement`. Each item has `scope`, `name` and `limit`. |
+| `enabled` | bool | `true` | Set `false` to evaluate a decision without writing. |
 
-Three distinct refusal codes, **none of them retryable** — re-running the apply
-will not help:
+Each `scope` is `regional` or `family`. Each `limit` is the new absolute value,
+not an increase.
 
-| Code | Meaning |
-|---|---|
-| `ContactSupport` | Self-service is exhausted. A support ticket is the only remaining route. |
-| `QuotaNotAvailableForResource` | Capacity is not there for this subscription. Observed on a current v6 family, and a smaller ask fared no better — the refusal is about the subscription, not the size of the request. |
-| `DeprecatedQuotaType` | The family is under the capacity growth restrictions. Returns 400 immediately. `ape-placement`'s lifecycle gate predicts this one, so it should never reach here. |
+## Outputs
 
-`ape-placement` narrows the odds by refusing to emit writes it can tell will be
-rejected, but `ContactSupport` and `QuotaNotAvailableForResource` depend on
-regional capacity and cannot be predicted from any API.
+| Name | Type | Description |
+|---|---|---|
+| `applied` | list | Each write, with the limit Azure returned. |
+| `pending` | list | Writes Azure accepted but did not grant. |
+
+A limit in `pending` that is lower than the requested value means the
+self-service path is exhausted. Raise a support request. The write was not lost.
+
+## Order
+
+The module writes the regional vCPU cap before the family limit. A family limit
+above the regional cap cannot be used.
+
+## A refused write fails the apply
+
+Terraform cannot catch a resource error, so a refusal cannot become a warning.
+This is also the correct result. A vended subscription that cannot run its
+workload is a failed vending.
+
+Azure refuses a quota write with one of three codes. Do not retry any of them.
+
+| Code | Meaning | Action |
+|---|---|---|
+| `ContactSupport` | Self-service is exhausted. | Raise a support request. |
+| `QuotaNotAvailableForResource` | Capacity is not available for this subscription. | Choose another region or size. A smaller request does not help. |
+| `DeprecatedQuotaType` | The family is growth-restricted. | Choose a successor family. `ape-placement` predicts this, so it should not reach the apply. |
 
 ## Timing
 
-A quota PUT returns `202` and settles asynchronously. azapi polls
-`operationsStatus` to completion by itself — no custom polling needed — but the
-latency is not reliable: the same class of operation resolved in about 35
-seconds via REST and took 95 seconds through Terraform. Budget generously.
+A quota PUT returns `202` and completes asynchronously. The azapi provider polls
+`operationsStatus` until it finishes. No extra polling is needed.
+
+The wait is not predictable. The same operation has taken 35 seconds through the
+REST API and 95 seconds through Terraform. Set generous timeouts.
 
 ## Why `azapi_update_resource`
 
-A quota limit is a property of something Azure already owns, not a resource with
-its own lifecycle. `Microsoft.Quota` has no DELETE, so a managed
-`azapi_resource` would fail on `terraform destroy`. `azapi_update_resource`
-writes the property and simply stops managing it on destroy.
+A quota limit is a property of a resource Azure already owns. It is not a
+resource with its own lifecycle. `Microsoft.Quota` has no DELETE, so a managed
+`azapi_resource` fails on `terraform destroy`. `azapi_update_resource` writes
+the property and stops managing it on destroy.
 
-This works as desired state because `limit` is **absolute, never a delta**.
+This works as desired state because `limit` is absolute.
 
-## Ordering
+## Bicep equivalent
 
-The regional vCPU cap is written before the family limit, via `depends_on`. A
-family limit above the regional cap is unusable, so raising the family without
-raising the cap buys nothing.
+[`bicep/ape-apply.bicep`](../../bicep/ape-apply.bicep) performs the same writes
+for the Bicep path.
