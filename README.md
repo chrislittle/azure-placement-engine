@@ -1,13 +1,23 @@
 # Azure Placement Engine
 
+> [!WARNING]
+> **Experimental. Not ready for use.**
+>
+> This is an active experiment, not a supported product. The module contracts
+> change without notice. It writes real quota to real subscriptions. Do not run
+> it against anything you care about.
+>
+> The quota group and capacity reservation layers are designed but not built,
+> and are untested against the billing account types that support them.
+
 *(name is a placeholder)*
 
 Layers quota and capacity decisions onto **Azure subscription vending**.
 
-A vending module builds the subscription as normal. APE then reads the subscription request
-that drove it and sets the subscription up to actually run something: allocating
-vCPU quota, choosing a VM family when the customer has not fixed one, and
-enforcing the platform team's business rules about who gets what.
+A vending module creates the subscription. APE then reads the request that
+created it and gives the subscription what it needs to run a workload: vCPU
+quota, a VM family when the request does not name one, and the platform team's
+rules about who gets what.
 
 It runs as a **second stage** after vending, taking the new `subscription_id` as
 its only handoff. Microsoft's [subscription vending
