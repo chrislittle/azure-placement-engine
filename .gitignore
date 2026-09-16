@@ -15,3 +15,10 @@ tenant/*.json
 
 # Raw ingest cache; snapshots under snapshots/ ARE committed (they are the pinned truth).
 .cache/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.auto.tfvars.json

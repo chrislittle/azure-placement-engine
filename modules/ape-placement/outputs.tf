@@ -1,0 +1,87 @@
+output "decision" {
+  description = <<-EOT
+    The placement decision, and enough of the reasoning to argue with it.
+
+    `status` is the load-bearing field:
+
+      satisfied        existing quota already covers the request; no writes
+      needs_allocation the pool can cover the shortfall; allocation is
+                       self-service and will succeed
+      needs_increase   a quota limit increase is required. Increases are
+                       evaluated, not granted, and are refused when regional
+                       capacity is short -- so this is NOT a promise
+      blocked_by_rule  a business rule refused the request
+      infeasible       no candidate family can reach the requested size
+  EOT
+
+  value = {
+    status = local.status
+    reason = local.reason
+
+    region = var.request.region
+    vcpus  = var.request.vcpus
+    family = local.chosen
+
+    # Absolute, matching Microsoft.Quota semantics -- the value to write, not
+    # an increment. Null when there is nothing to write.
+    target_limit = local.target_limit
+
+    # The regional vCPU cap is a separate gate from the family limit and has to
+    # be raised separately when it binds.
+    regional = {
+      limit             = var.pool.regional_cores_limit
+      used              = var.pool.regional_cores_used
+      headroom          = local.regional_headroom
+      increase_required = local.regional_increase_required
+      target            = local.regional_increase_required ? local.regional_target : var.pool.regional_cores_limit
+    }
+
+    rule_applied = local.rule_name
+    preference   = local.prefer
+
+    # Why every other family lost. This is most of the value: a placement that
+    # cannot say why it rejected the alternatives is not auditable.
+    considered = [
+      for r in local.reachable : {
+        family    = r.family
+        limit     = r.limit
+        used      = r.used
+        headroom  = r.headroom
+        grantable = r.grantable
+        outcome = (
+          r.family == local.chosen ? "chosen" :
+          !r.satisfied_pool ? format("short by %d vCPUs", var.request.vcpus - (r.headroom + r.grantable)) :
+          "eligible, outranked"
+        )
+      }
+    ]
+
+    # Named but absent from the pool. Usually a typo or a family this
+    # subscription has never been offered; either way it is not a silent drop.
+    unknown_families = local.unknown_families
+  }
+}
+
+output "writes_required" {
+  description = <<-EOT
+    What the apply layer should write, or an empty list when nothing is needed.
+    Ordered: the regional cap first, since a family limit above it is unusable.
+
+    Only differences appear. A family whose limit already covers the request is
+    omitted even when the regional cap still has to be raised, so the apply
+    layer never issues a PATCH that changes nothing.
+  EOT
+
+  value = local.chosen == null ? [] : concat(
+    local.regional_increase_required ? [{
+      scope = "regional"
+      name  = "cores"
+      limit = local.regional_target
+    }] : [],
+    local.target_limit > local.chosen_detail.limit ? [{
+      scope = "family"
+      name  = local.chosen
+      limit = local.target_limit
+    }] : [],
+  )
+}
