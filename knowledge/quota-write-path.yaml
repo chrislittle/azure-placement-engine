@@ -1,0 +1,93 @@
+# What actually happens when you write a per-subscription quota limit.
+#
+# This is v1's backend -- the thing APE writes when there is no quota group
+# behind the subscription. Everything below was observed against a live
+# PayAsYouGo subscription, not read off a doc page.
+reviewed: 2026-09-16
+source: >
+  learn.microsoft.com/rest/api/quota/quota/create-or-update (api-version 2025-09-01),
+  plus live PUTs against subscription 20c6f426 in eastus on 2026-09-16.
+confidence: high
+recheck_after: 2027-03-31
+
+endpoint: >
+  PUT /subscriptions/{sub}/providers/Microsoft.Compute/locations/{region}
+  /providers/Microsoft.Quota/quotas/{familyName}?api-version=2025-09-01
+
+# Absolute, same as the quota-group path. See quota-groups.yaml.
+body_shape: |
+  {"properties": {
+     "name":  {"value": "standardNCFamily"},
+     "limit": {"limitObjectType": "LimitValue", "value": 24}}}
+
+# THE IMPORTANT PART. "Self-service quota" is not one behaviour, it is four,
+# and three of them are not success. A 202 is NOT an approval -- it is Azure
+# agreeing to evaluate the request.
+outcomes:
+  granted_immediately:
+    http: 200
+    note: Limit applied in the response. Documented; not observed on this subscription.
+
+  evaluated_then_granted:
+    http: 202 + Location + Retry-After 30
+    then: poll until provisioningState == Succeeded
+    note: Documented. The optimistic path everyone assumes is the only path.
+
+  evaluated_then_refused:
+    http: 202 + Location + Retry-After 30
+    then: provisioningState == Failed, error.code == ContactSupport
+    observed: >
+      standardNCFamily 12 -> 24 in eastus. InProgress at 13:04:43 and 13:05:00,
+      Failed at 13:05:17 -- roughly 35 seconds. The limit stayed at 12.
+    note: >
+      `ContactSupport` is the machine-readable signal that the self-service path
+      is exhausted and a ticket is the only remaining route. This is the
+      outcome APE must handle, because it is indistinguishable from success at
+      submission time.
+
+  structurally_refused:
+    http: 400
+    code: DeprecatedQuotaType
+    observed: >
+      standardDSv3Family 10 -> 20 in eastus, refused outright. The message names
+      replacements: StandardDsv6Family, StandardDdsv6Family, StandardDsv7Family.
+    note: >
+      Immediate and final -- the family is retired and no amount of waiting or
+      escalating changes it. The error text carries the recommended successors,
+      which is the only place that mapping appears.
+
+# isQuotaApplicable reads like a pre-check. It is not a reliable one.
+# standardDSv3Family reported isQuotaApplicable: true and then failed the PUT
+# with DeprecatedQuotaType. Same failure mode as the other fields in
+# capacity-signals.yaml: it overstates in the direction that produces failures.
+is_quota_applicable_warning: >
+  Do not gate on isQuotaApplicable. It returned true for a family whose write
+  was structurally refused. Treat it as necessary, never sufficient.
+
+# Consequences for the module.
+implications:
+  - >
+    A write is not a decision. APE can report "needs_increase" but must never
+    present it as a promise, because the same submission can be granted for one
+    family and refused for the next.
+  - >
+    The apply layer has to poll, and has to distinguish Failed+ContactSupport
+    (raise a ticket) from DeprecatedQuotaType (choose a different family, and
+    the replacements are in the error message).
+  - >
+    Sub-minute latency means this is not a background job, but it is also not
+    synchronous. Terraform will need to wait on the LRO.
+
+# Composition with vending, checked 2026-09-16 against
+# Azure/terraform-azure-avm-ptn-alz-sub-vending.
+vending_integration:
+  outputs_available: >
+    subscription_id and subscription_resource_id, plus resource_group_resource_ids,
+    virtual_network_resource_ids, umi_* and budget_resource_id.
+  note: >
+    The module exposes the new subscription's id, which is all APE needs to be
+    wired downstream of it. There is NO passthrough for workload metadata or
+    requirements, and nothing quota-related anywhere in its inputs -- so the
+    intake that drives placement has to be a sibling input to both modules
+    rather than something carried through vending. Simpler than routing it
+    through, and it keeps the vending module untouched.

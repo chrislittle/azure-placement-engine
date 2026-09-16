@@ -42,6 +42,27 @@ restriction_types:
   Zone: region is fine, named zones are not
   Location: the whole region is unavailable for this SKU on this subscription
 
+# CONFIRMED BY DEPLOYMENT, 2026-09-16. This was previously an inference from the
+# API distinguishing Zone from Location, and Microsoft documents it nowhere.
+#
+# Standard_DS1 in eastus: published zones ["2","3"], restricted ["1","2","3"].
+# Two PUTs against Microsoft.Compute/virtualMachines, same SKU, same region,
+# same subscription, minutes apart:
+#
+#   zones: ["2"]  -> error SkuNotAvailable
+#                    "Following SKUs have failed for Capacity Restrictions"
+#   no zones      -> ACCEPTED, provisioningState Creating
+#
+# So a Zone-type restriction blocks zonal placement and leaves regional
+# placement available. The test VM was deleted immediately afterwards.
+zone_restriction_vs_regional: >
+  A Zone-type restriction does NOT block regional (non-zonal) deployment.
+  Verified by deployment rather than inferred.
+caveat: >
+  Every SKU on this subscription with all published zones restricted was a
+  legacy series (D/DS v1, v2 Promo), so the test could only be run on one.
+  A modern SKU in the same state would be worth re-testing opportunistically.
+
 # Every restriction observed on this subscription was NotAvailableForSubscription,
 # i.e. requestable. QuotaId would mean the offer excludes the SKU and no support
 # ticket will change it. See capacity-signals.yaml.

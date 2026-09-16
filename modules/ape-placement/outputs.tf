@@ -50,10 +50,14 @@ output "decision" {
       denied      = local.access_denied
       unverified  = local.access_unverified
       requestable = local.requestable
+      # Portal path for both: Help + support -> Create a support request ->
+      # Service and subscription limits (quotas) -> Compute-VM (cores-vCPUs).
       remediation = length(local.access_denied) == 0 ? null : (
-        local.requestable
-        ? "Raise a SKU access request for the denied families in this region."
-        : "The subscription offer excludes these SKUs; a support ticket will not lift it."
+        !local.requestable
+        ? "QuotaId: the subscription offer excludes these SKUs. No support ticket will lift this -- choose a different family."
+        : local.denied_by_location
+        ? "Raise a region or SKU access request (quota type: Compute-VM subscription limit increases) for the denied families."
+        : "Raise a zonal enablement request (quota type: Compute-VM, then Zone access) for the denied zones. Regional placement of the same families is unaffected."
       )
     }
 

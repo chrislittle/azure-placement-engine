@@ -88,10 +88,11 @@ locals {
   # A family is deployable if at least ONE of its sizes satisfies the placement
   # type -- customers buy a family's worth of quota but deploy a specific size.
   #
-  # ASSUMPTION, not documented by Microsoft: a Zone-type restriction blocks
-  # zonal deployment but leaves regional deployment available, which is why the
-  # API distinguishes Zone from Location at all. If that turns out false, the
-  # regional branch below is the line to change. See knowledge/zone-restrictions.yaml.
+  # CONFIRMED by deployment on 2026-09-16, not merely inferred: a Zone-type
+  # restriction blocks zonal deployment and leaves regional deployment
+  # available. Standard_DS1 in eastus, all published zones restricted -- a
+  # zonal PUT returned SkuNotAvailable, a regional PUT was accepted.
+  # See knowledge/zone-restrictions.yaml.
   family_deployable = {
     for f, sizes in local.size_access : f => (
       local.placement_type == "regional"
@@ -204,6 +205,14 @@ locals {
 
   # Whether an access gap is worth raising a ticket over, or is simply final.
   requestable = contains(flatten([for f in local.access_denied : local.family_reasons[f]]), "NotAvailableForSubscription")
+
+  # The three access requests are different tickets with different forms, so
+  # naming the wrong one sends someone down the wrong queue. A denial where
+  # every size is Location-restricted is about the region or the SKU; anything
+  # else is about zones.
+  denied_by_location = length(local.access_denied) > 0 && alltrue([
+    for f in local.access_denied : alltrue([for sz in local.size_access[f] : sz.location_restricted])
+  ])
 
   reason = (
     local.over_rule_cap ? format("rule %q caps requests at %d vCPUs", local.rule_name, local.rule_cap) :
