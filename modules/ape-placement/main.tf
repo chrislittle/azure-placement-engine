@@ -27,7 +27,8 @@ locals {
   # Microsoft.Compute/skus returns a full, unrestricted-looking catalogue: 796
   # of 866 VM SKUs in Germany North report no restriction whatsoever for a
   # subscription that cannot deploy there.
-  region_accessible = coalesce(try(var.pool.region_accessible, null), true)
+  region_accessible   = coalesce(try(var.pool.region_accessible, null), true)
+  provider_registered = coalesce(try(var.pool.provider_registered, null), true)
 
   wanted_class = try(var.request.class, null)
 
@@ -280,6 +281,7 @@ locals {
   all_blocked_by_access = local.access_checked && length(local.access_permitted) == 0 && (length(local.access_denied) > 0 || length(local.not_offered) > 0)
 
   status = (
+    !local.provider_registered ? "not_ready" :
     !local.region_accessible ? "blocked_by_region" :
     local.class_unmatched ? "infeasible" :
     local.over_rule_cap ? "blocked_by_rule" :
@@ -308,6 +310,7 @@ locals {
   ])
 
   reason = (
+    !local.provider_registered ? "Microsoft.Compute is not registered on this subscription yet; this resolves on its own shortly after vending and is not an access problem" :
     !local.region_accessible ? format(
       "the subscription has no access to %s; this needs a region access request and no amount of quota will help",
       var.request.region,

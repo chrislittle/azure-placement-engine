@@ -9,6 +9,14 @@ that drove it and sets the subscription up to actually run something: allocating
 vCPU quota, choosing a VM family when the customer has not fixed one, and
 enforcing the platform team's business rules about who gets what.
 
+It runs as a **second stage** after vending, taking the new `subscription_id` as
+its only handoff. Microsoft's [subscription vending
+guidance](https://learn.microsoft.com/en-us/azure/architecture/landing-zones/subscription-vending)
+lists the deployment pipeline's tasks as Identity, Governance, Networking,
+Budgets and Reporting — quota is not among them, and CAF names the gap without
+filling it: *"the quota request can fail, so you should run a script to handle
+any errors."*
+
 Built as **Terraform and Bicep (AVM) modules**, composed with
 [`Azure/avm-ptn-sub-vending/azurerm`](https://registry.terraform.io/modules/Azure/avm-ptn-sub-vending/azurerm/latest)
 and [`avm/ptn/lz/sub-vending`](https://github.com/Azure/bicep-registry-modules/tree/main/avm/ptn/lz/sub-vending).
@@ -26,7 +34,7 @@ superseded — see that folder's README before reading anything in it.
 - [x] `ape-placement` — decides. 40 tests, no subscription needed
 - [x] `ape-read` — live quota, SKU availability and region access, all Terraform
 - [x] `ape-apply` — write quota, with the refusal semantics documented
-- [ ] `ape-vending` — compose with `avm-ptn-sub-vending`
+- [x] `examples/vending-stage-2` — the handoff contract and a sample intake
 
 ## Shape
 
@@ -65,7 +73,7 @@ headroom comes from rather than how the decision is made.
 | `modules/ape-read/` | Reads live Azure state — quota, SKUs, region access |
 | `modules/ape-placement/` | Decides. No resources, so it tests against fixtures |
 | `modules/ape-apply/` | Writes the quota a decision asked for |
-| `examples/end-to-end/` | Both wired together against a real subscription |
+| `examples/vending-stage-2/` | The stage-2 pattern, with a sample intake |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
 | `docs/decisions/` | Dated architectural decisions |
 | `archive/` | Superseded work. Not current. |

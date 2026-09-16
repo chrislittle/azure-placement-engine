@@ -82,3 +82,56 @@ run "region_accessible_defaults_to_true" {
     error_message = "omitting region_accessible should not block anything"
   }
 }
+
+# A freshly vended subscription registers providers as part of vending, and
+# registration is not instantaneous. Compute usages answers the SAME
+# NoRegisteredProviderFound in that window as it does for a region the
+# subscription was never granted -- one resolves by waiting, the other needs a
+# support ticket, and reporting the first as the second would be wrong.
+run "an_unregistered_provider_is_transient_not_an_access_gap" {
+  command = plan
+
+  variables {
+    request = { region = "eastus", vcpus = 8 }
+    pool = {
+      provider_registered  = false
+      region_accessible    = false
+      regional_cores_limit = 0
+      regional_cores_used  = 0
+      families             = {}
+    }
+  }
+
+  assert {
+    condition     = output.decision.status == "not_ready"
+    error_message = "an unregistered provider must not be reported as a denied region"
+  }
+  assert {
+    condition     = strcontains(output.decision.reason, "resolves on its own")
+    error_message = "the reason should say to wait, not to raise a ticket"
+  }
+  assert {
+    condition     = !strcontains(output.decision.reason, "access request")
+    error_message = "it must not send someone after a region access request"
+  }
+}
+
+run "an_ungranted_region_with_providers_registered_is_still_an_access_gap" {
+  command = plan
+
+  variables {
+    request = { region = "germanynorth", vcpus = 8 }
+    pool = {
+      provider_registered  = true
+      region_accessible    = false
+      regional_cores_limit = 0
+      regional_cores_used  = 0
+      families             = {}
+    }
+  }
+
+  assert {
+    condition     = output.decision.status == "blocked_by_region"
+    error_message = "with providers registered, an unreachable region is a real access gap"
+  }
+}

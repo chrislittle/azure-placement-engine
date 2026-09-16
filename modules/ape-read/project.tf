@@ -105,6 +105,7 @@ locals {
 
   pool = {
     region_accessible    = local.region_accessible
+    provider_registered  = local.provider_registered
     regional_cores_limit = try(local.regional_cores.limit, 0)
     regional_cores_used  = try(local.regional_cores.used, 0)
     families = {

@@ -109,6 +109,11 @@ variable "pool" {
     # Compute usages call is the only probe for this: Microsoft.Compute/skus
     # happily returns data for a region you cannot deploy to.
     region_accessible = optional(bool, true)
+
+    # False when Microsoft.Compute is not registered on the subscription yet.
+    # Transient, unlike an ungranted region -- worth telling apart, because one
+    # resolves by waiting and the other needs a support ticket.
+    provider_registered = optional(bool, true)
     families = map(object({
       limit     = number
       used      = number

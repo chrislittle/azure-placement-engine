@@ -29,16 +29,33 @@ data "azapi_resource_action" "compute_provider" {
 }
 
 locals {
+  # NoRegisteredProviderFound means two different things, and conflating them
+  # would report a brand-new subscription as permanently denied a region it can
+  # use perfectly well:
+  #
+  #   provider not registered yet  transient, resolves on its own
+  #   region not granted           permanent, needs a region access request
+  #
+  # registrationState separates them. A freshly vended subscription registers
+  # providers as part of vending, and registration is not instantaneous.
+  provider_registered = try(
+    data.azapi_resource_action.compute_provider.output.registrationState, ""
+  ) == "Registered"
+
   usage_locations = [
     for rt in try(data.azapi_resource_action.compute_provider.output.resourceTypes, []) :
     [for l in try(rt.locations, []) : lower(replace(l, " ", ""))]
     if try(rt.resourceType, "") == "locations/usages"
   ]
 
-  region_accessible = contains(
+  region_granted = contains(
     length(local.usage_locations) > 0 ? local.usage_locations[0] : [],
     lower(replace(var.region, " ", "")),
   )
+
+  # Both reads need the provider registered AND the region granted. The two are
+  # reported separately so a caller can tell "wait" from "raise a ticket".
+  region_accessible = local.provider_registered && local.region_granted
 }
 
 # Both reads are gated on access, so an unreachable region yields an empty pool
