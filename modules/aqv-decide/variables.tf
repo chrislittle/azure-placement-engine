@@ -87,6 +87,10 @@ variable "sku_access" {
       restricted_zones    = optional(list(string), [])
       location_restricted = optional(bool, false)
       restriction_reason  = optional(string)
+
+      # Optional. When present, the decision reports which sizes fit the
+      # request, because a workload is deployed as a size and not as a family.
+      vcpus = optional(number)
     }))
   }))
   default = {}

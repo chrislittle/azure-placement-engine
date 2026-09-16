@@ -124,6 +124,7 @@ with no `environments` matches every request, so place it last.
 | `regional` | The region-wide cap, its unused vCPUs, and whether it must be raised. |
 | `lifecycle` | Families refused by the growth restrictions, and their successors. |
 | `access` | Region and zone access, and the remediation for a refusal. |
+| `sizes` | The sizes inside the chosen family that fit the request, each with its vCPU count and how many are needed. |
 | `considered` | Each candidate, its numbers, and why it lost. |
 | `rule_applied` | The rule used, or `(none)`. |
 | `unknown_families` | Named families that are absent from `quota.families`. |
@@ -186,6 +187,20 @@ obtain more. Set `request.new_subscription` correctly.
 `available = null` means no quota group sits behind the subscription. The module
 treats that as unproven, not as unlimited. This is what separates
 `needs_allocation` from `needs_increase`.
+
+### A family is not deployable
+
+`family` names a quota bucket. A workload is deployed as a size. `sizes`
+therefore lists the sizes inside the chosen family that survive the placement
+type and the zone restrictions:
+
+```text
+Standard_D8ads_v7    8 vCPU   count_at 1
+Standard_D4ads_v7    4 vCPU   count_at 2
+```
+
+`count_at` is how many of that size the requested vCPUs need. It is populated
+only when `sku_access` carries a `vcpus` for the size, which `aqv-read` supplies.
 
 ### Rejected candidates are recorded
 

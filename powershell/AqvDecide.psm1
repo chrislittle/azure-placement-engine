@@ -188,6 +188,7 @@ function Get-AqvDecision {
                 [pscustomobject]@{
                     name                = $_
                     effective_zones     = Get-EffectiveZones $sz
+                vcpus               = Get-Prop $sz 'vcpus' 
                     published_zones     = @(Get-Prop $sz 'zones' @())
                     location_restricted = [bool](Get-Prop $sz 'location_restricted' $false)
                     reason              = Get-Prop $sz 'restriction_reason'
@@ -247,7 +248,7 @@ function Get-AqvDecision {
     # --- quota arithmetic --------------------------------------------------
     $regionalLimit = [int](Get-Prop $Quota 'regional_cores_limit' 0)
     $regionalUsed = [int](Get-Prop $Quota 'regional_cores_used' 0)
-    $regionalHeadroom = [Math]::Max(0, $regionalLimit - $regionalUsed)
+    $regionalUnused = [Math]::Max(0, $regionalLimit - $regionalUsed)
 
     $reachable = @($accessPermitted | ForEach-Object {
             $d = Get-Prop $families $_
@@ -295,7 +296,29 @@ function Get-AqvDecision {
     $chosenDetail = if ($chosen) { @($reachable | Where-Object family -EQ $chosen)[0] } else { $null }
 
     $targetLimit = if ($chosenDetail) { [Math]::Max($chosenDetail.limit, $chosenDetail.used + $vcpus) } else { $null }
-    $regionalIncreaseRequired = $vcpus -gt $regionalHeadroom
+    # Sizes the workload team can actually deploy in the chosen family. A family
+    # is not deployable; a size is.
+    $chosenSizes = @()
+    if ($chosen -and $sizeAccess.ContainsKey($chosen)) {
+        $chosenSizes = @($sizeAccess[$chosen] | Where-Object {
+                $eff = @($_.effective_zones)
+                (-not $_.location_restricted) -and (
+                    ($placementType -eq 'regional') -or
+                    ($placementType -eq 'zonal' -and @($wantedZones | Where-Object { $_ -notin $eff }).Count -eq 0) -or
+                    ($placementType -eq 'zone_redundant' -and $eff.Count -ge $wantedZoneCount)
+                )
+            } | ForEach-Object {
+                $sv = if ($null -ne $_.vcpus) { [int]$_.vcpus } else { 0 }
+                [pscustomobject]@{
+                    name     = $_.name
+                    vcpus    = if ($sv -gt 0) { $sv } else { $null }
+                    zones    = @($_.effective_zones)
+                    count_at = if ($sv -gt 0) { [int][Math]::Ceiling($vcpus / $sv) } else { $null }
+                }
+            })
+    }
+
+    $regionalIncreaseRequired = $vcpus -gt $regionalUnused
     $regionalTarget = [Math]::Max($regionalLimit, $regionalUsed + $vcpus)
 
     $allBlockedByLifecycle = ($lifecyclePermitted.Count -eq 0) -and ($lifecycleDenied.Count -gt 0)
@@ -377,7 +400,7 @@ function Get-AqvDecision {
         regional     = [pscustomobject]@{
             limit             = $regionalLimit
             used              = $regionalUsed
-            unused          = $regionalHeadroom
+            unused          = $regionalUnused
             increase_required = $regionalIncreaseRequired
             target            = if ($regionalIncreaseRequired) { $regionalTarget } else { $regionalLimit }
         }
@@ -405,6 +428,7 @@ function Get-AqvDecision {
             remediation         = $remediation
         }
 
+        sizes        = $chosenSizes
         rule_applied = $ruleName
         preference   = $prefer
 

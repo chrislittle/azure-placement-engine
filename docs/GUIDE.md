@@ -5,6 +5,7 @@ vending pipeline.
 
 - [Who does what](#who-does-what)
 - [Step by step](#step-by-step)
+- [After the handover — the workload team](#after-the-handover--the-workload-team)
 - [What the answer looks like](#what-the-answer-looks-like)
 - [Where AQV fits](#where-aqv-fits)
 - [Prerequisites](#prerequisites)
@@ -51,7 +52,7 @@ belongs to the platform team.
 | **Writes YAML** | No. The request pipeline generates it. | Yes, `rules.yaml`, by hand. |
 | **Repository access** | None required. | Owns it. |
 | **Azure rights** | None required. Optionally `Reader` on their own subscription. | `Reader` and `Quota Request Operator`. |
-| **Receives** | A subscription with quota, and the family to deploy into. | The decision, and why each family lost. |
+| **Receives** | A subscription with quota, the family, and the sizes inside it that fit. | The decision, and why each family lost. |
 
 ### What the form asks, and what it becomes
 
@@ -89,7 +90,8 @@ Both files are read by the deployment pipeline. Neither is read by Azure.
 
 ## Step by step
 
-From nothing to a real answer. Steps 1 to 5 write nothing to Azure.
+Steps 1 to 9 are the platform team. Steps 10 to 12 are the workload team.
+Steps 1 to 5 write nothing to Azure.
 
 ### 1. Get the modules
 
@@ -246,6 +248,94 @@ terraform apply -var subscription_id=$SUB -var apply_writes=true
 
 A refused quota write fails the run on purpose. See
 [Reading a decision](#reading-a-decision) for what each refusal means.
+
+---
+
+## After the handover — the workload team
+
+Everything above is the platform team. This is where the workload team picks it
+up.
+
+### 10. They are told what they got
+
+The platform team's pipeline produces the decision as an artifact. The vending
+guidance already has a step for this: *"Update the data collection tool request
+with the final subscription name and GUID… Notify the application team that the
+subscription is ready."* The decision belongs in that notification.
+
+What matters to the workload team is three fields:
+
+| Field | Meaning |
+|---|---|
+| `family` | The VM family their quota is for. |
+| `sizes` | The sizes inside it they can deploy, and how many of each the request needs. |
+| `regional.limit` | The region-wide vCPU cap they share across every family. |
+
+### 11. They can check for themselves, at any time
+
+They do not have to rely on a message from weeks ago. With only `Reader` on
+their own subscription:
+
+```powershell
+./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8
+```
+
+```text
+  Can I deploy 8 vCPUs in eastus?
+  Yes
+
+  use family : StandardDadsv7Family
+```
+
+Add `-AsJson` for the whole decision, including `sizes`.
+
+### 12. They deploy
+
+A family cannot be deployed. A size can. The decision names the sizes in the
+chosen family that fit the request:
+
+```text
+Standard_D8ads_v7    8 vCPU   deploy 1
+Standard_D4ads_v7    4 vCPU   deploy 2
+Standard_D2ads_v7    2 vCPU   deploy 4
+```
+
+Pick one and use it in the workload team's own IaC. This is their code, in their
+pipeline, and nothing in this repository runs it:
+
+```hcl
+resource "azurerm_linux_virtual_machine" "app" {
+  name                = "app-01"
+  resource_group_name = azurerm_resource_group.app.name
+  location            = "eastus"
+
+  # From the decision: decision.sizes[].name
+  size = "Standard_D8ads_v7"
+
+  # From the request: placement.type was zone_redundant, so spread across
+  # decision.sizes[].zones
+  zone = "1"
+  # ...
+}
+```
+
+```bicep
+resource app 'Microsoft.Compute/virtualMachines@2024-07-01' = {
+  name: 'app-01'
+  location: 'eastus'
+  zones: ['1']
+  properties: {
+    hardwareProfile: {
+      vmSize: 'Standard_D8ads_v7'   // from the decision
+    }
+    // ...
+  }
+}
+```
+
+If the deployment fails for capacity, the quota was never the problem. Quota is
+permission to allocate, not a reservation. Re-run step 11 to see whether
+anything about the subscription has changed.
 
 ---
 

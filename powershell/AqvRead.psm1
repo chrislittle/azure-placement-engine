@@ -208,6 +208,10 @@ function Get-AqvSkuAccess {
         foreach ($c in @($s.capabilities)) { $caps[$c.name] = $c.value }
 
         $vcpus = if ($caps.ContainsKey('vCPUs')) { [double]$caps['vCPUs'] } else { 0 }
+
+        # The workload team deploys a size, not a family, so the size carries
+        # its own vCPU count through to the decision.
+        $entry.vcpus = if ($vcpus -gt 0) { [int]$vcpus } else { $null }
         $memory = if ($caps.ContainsKey('MemoryGB')) { [double]$caps['MemoryGB'] } else { 0 }
         if ($vcpus -gt 0) { $agg[$family].ratios.Add($memory / $vcpus) }
         if ($caps.ContainsKey('GPUs') -and [double]$caps['GPUs'] -gt 0) { $agg[$family].gpu = $true }

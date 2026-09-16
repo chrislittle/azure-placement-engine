@@ -92,6 +92,10 @@ output "decision" {
       )
     }
 
+    # What to actually deploy. A family cannot be deployed; a size can.
+    # `count_at` is how many of that size the requested vCPUs need.
+    sizes = local.chosen_sizes
+
     rule_applied = local.rule_name
     preference   = local.prefer
 

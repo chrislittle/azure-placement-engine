@@ -301,6 +301,25 @@ locals {
     local.chosen_detail.used + var.request.vcpus,
   )
 
+  # Sizes the workload team can actually deploy in the chosen family.
+  #
+  # A family is not deployable. A size is. The decision names the family, so it
+  # also has to name the sizes inside it that fit the request and survive the
+  # zone restrictions, or the workload team is left to work that out alone.
+  chosen_sizes = local.chosen == null ? [] : [
+    for sz in try(local.size_access[local.chosen], []) : {
+      name     = sz.name
+      vcpus    = try(sz.vcpus, null)
+      zones    = sz.effective_zones
+      count_at = try(sz.vcpus, 0) > 0 ? ceil(var.request.vcpus / sz.vcpus) : null
+    }
+    if !sz.location_restricted && (
+      local.placement_type == "regional"
+      || (local.placement_type == "zonal" && length(setsubtract(toset(local.wanted_zones), toset(sz.effective_zones))) == 0)
+      || (local.placement_type == "zone_redundant" && length(sz.effective_zones) >= local.wanted_zone_count)
+    )
+  ]
+
   regional_increase_required = var.request.vcpus > local.regional_unused
   regional_target = max(
     var.quota.regional_cores_limit,
