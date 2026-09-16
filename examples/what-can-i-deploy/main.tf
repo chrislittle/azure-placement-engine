@@ -58,6 +58,18 @@ variable "architecture" {
   default     = null
 }
 
+variable "rules_file" {
+  description = <<-EOT
+    Optional. The platform team's rules file.
+
+    Without it, the answer is what AZURE permits. With it, the answer is what
+    the PLATFORM would grant, which can be stricter. Point this at the same
+    rules.yaml the pipeline uses and the two answers agree.
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "new_subscription" {
   description = <<-EOT
     Leave true for a freshly vended subscription. Set false for one that already
@@ -75,8 +87,23 @@ module "read" {
   region          = var.region
 }
 
+locals {
+  rules = var.rules_file == null ? [] : [
+    for r in try(yamldecode(file(var.rules_file)).rules, []) : {
+      name             = r.name
+      environments     = try(r.environments, null)
+      family_allowlist = try(r.family_allowlist, null)
+      family_denylist  = try(r.family_denylist, null)
+      max_vcpus        = try(r.max_vcpus, null)
+      prefer           = try(r.prefer, "most_unused")
+    }
+  ]
+}
+
 module "decide" {
   source = "../../modules/aqv-decide"
+
+  rules = local.rules
 
   request = {
     region           = var.region
@@ -93,6 +120,8 @@ module "decide" {
 output "answer" {
   description = "The short version."
   value = {
+    rules_applied = var.rules_file == null ? "none — this is what Azure permits, not what the platform would grant" : module.decide.decision.rule_applied
+
     can_i_deploy = module.decide.decision.status == "satisfied"
     status       = module.decide.decision.status
     reason       = module.decide.decision.reason

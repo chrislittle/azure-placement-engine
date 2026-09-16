@@ -280,6 +280,41 @@ their own subscription:
 ./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8
 ```
 
+**Two different questions.** Run without a rules file and the answer is what
+*Azure* permits. The platform's rules are stricter, and the pipeline applies
+them. Pass the same `rules.yaml` the pipeline uses and the two answers agree:
+
+```powershell
+./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8 `
+    -RulesFile ../../platform/rules.yaml
+```
+
+Without rules:
+
+```text
+  Can I deploy 8 vCPUs in eastus?
+  Yes
+  rule       : none applied — this is what Azure permits,
+               not what the platform would grant
+  use family : StandardDadsv7Family
+
+  Sizes you can deploy:
+    Standard_D8ads_v7            8 vCPU   deploy 1
+    Standard_D4ads_v7            4 vCPU   deploy 2
+```
+
+With a rules file that caps at 4 vCPUs, the same question is refused:
+
+```text
+  Can I deploy 8 vCPUs in eastus?
+  Not yet
+
+  status     : blocked_by_rule
+  reason     : rule "everything caps at 4 vCPUs" caps requests at 4 vCPUs
+```
+
+The script says which of the two it answered, every time.
+
 ```text
   Can I deploy 8 vCPUs in eastus?
   Yes
@@ -341,21 +376,44 @@ anything about the subscription has changed.
 
 ## What the answer looks like
 
-Real output, from a PayAsYouGo subscription with a regional cap of 10 vCPUs.
+### What the platform team sees
 
-The request said `environment: prod`, so the production rule applied:
+From the pipeline, or from a local run of stage 2:
 
 ```text
-status      : infeasible
-reason      : no candidate family is present in the quota
-rule applied: production uses approved families, cheapest first
+status      : satisfied
+reason      : existing quota covers the request
+rule applied: default
+family      : StandardDadsv7Family
+writes      : 0
 ```
 
-That subscription holds no quota for any family on the production allowlist. The
-rule did its job. It refused rather than quietly choosing something the platform
-had not approved.
+`writes: 0` means the quota was already there. When it is not, `writes_required`
+lists what `aqv-apply` will set.
 
-Change the request to `environment: devtest` and the first rule applies instead:
+### What the workload team receives
+
+The decision, as `decision.json` from the pipeline artifact. Three fields matter
+to them:
+
+```json
+{
+  "status": "satisfied",
+  "family": "StandardDadsv7Family",
+  "sizes": [
+    { "name": "Standard_D8ads_v7", "vcpus": 8, "count_at": 1, "zones": ["1","2","3"] },
+    { "name": "Standard_D4ads_v7", "vcpus": 4, "count_at": 2, "zones": ["1","2","3"] },
+    { "name": "Standard_D2ads_v7", "vcpus": 2, "count_at": 4, "zones": ["1","2","3"] }
+  ],
+  "regional": { "limit": 10, "used": 0, "unused": 10 }
+}
+```
+
+`sizes` is what they deploy. `count_at` is how many of that size the request
+needs. `regional.limit` is the region-wide cap they share with every other
+family in the subscription.
+
+### When a request is refused
 
 ```text
 status      : blocked_by_rule
@@ -363,9 +421,17 @@ reason      : rule "devtest stays off GPU and stays small" caps requests at 32 v
 rule applied: devtest stays off GPU and stays small
 ```
 
-The request asked for 64 vCPUs. The devtest rule caps it at 32.
+The reason names the rule, so the workload team knows to ask for less or to ask
+the platform team to change the rule. Nothing was written.
 
-Neither run wrote anything.
+```text
+status      : infeasible
+reason      : no candidate family can reach 64 vCPUs
+```
+
+That subscription has a regional cap of 10 vCPUs. No family can reach 64.
+
+All of the above is real output from a PayAsYouGo subscription.
 
 ## Where AQV fits
 

@@ -25,6 +25,32 @@ terraform apply \
 
 There is no Bicep version. Bicep only writes, and this asks a question.
 
+## Two different questions
+
+Run it **without** a rules file and the answer is what **Azure** permits.
+
+Run it **with** the platform team's `rules.yaml` and the answer is what the
+**platform** would grant, which can be stricter. That is the answer the pipeline
+would give.
+
+```bash
+# what Azure permits
+./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8
+
+# what the platform would grant
+./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8 `
+    -RulesFile ../../platform/rules.yaml
+```
+
+The output always says which one it answered. Without rules:
+
+```text
+  rule       : none applied — this is what Azure permits,
+               not what the platform would grant
+```
+
+The Terraform version takes the same file as `-var rules_file=...`.
+
 ## It writes nothing
 
 `Reader` on the subscription is enough. The read step calls only read APIs, and
@@ -115,8 +141,18 @@ Asked for 8 vCPUs instead, the same subscription answers:
 | `why_not_the_others` | Every family considered, with its numbers and why it lost. |
 | `blocked` | Families that cannot be deployed here at all, and what would lift that. |
 
-`use_family` is the family to put in your own deployment. **This example does not
-deploy it. Nothing in this repository does.**
+A family cannot be deployed. `answer.use_family` names the quota bucket; the
+`sizes` output names what to actually deploy:
+
+```text
+  Sizes you can deploy:
+    Standard_D8ads_v7            8 vCPU   deploy 1
+    Standard_D4ads_v7            4 vCPU   deploy 2
+    Standard_D2ads_v7            2 vCPU   deploy 4
+```
+
+`deploy` is how many of that size the requested vCPUs need. Put the size in your
+own IaC. **This example does not deploy it. Nothing in this repository does.**
 
 Add `-AsJson` to the PowerShell version for the whole decision as JSON, for a
 pipeline to act on.

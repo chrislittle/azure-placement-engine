@@ -44,6 +44,12 @@ param(
     # families can still be used within quota already granted, but not grown.
     [switch]$NewSubscription,
 
+    # Optional. The platform team's rules file.
+    #
+    # Without it, the answer is what AZURE permits. With it, the answer is what
+    # the PLATFORM would grant, which can be stricter.
+    [string]$RulesFile,
+
     [switch]$AsJson
 )
 
@@ -63,8 +69,18 @@ if ($Category) { $request.category = $Category }
 if ($Architecture) { $request.architecture = $Architecture }
 if ($Burstable) { $request.burstable = $Burstable }
 
+$rules = @()
+if ($RulesFile) {
+    if (-not (Get-Module -ListAvailable powershell-yaml)) {
+        throw 'powershell-yaml is required to read a rules file. Install-Module powershell-yaml'
+    }
+    Import-Module powershell-yaml -Force
+    $doc = ConvertFrom-Yaml (Get-Content $RulesFile -Raw)
+    $rules = @($doc.rules)
+}
+
 $state = Get-AqvState -SubscriptionId $SubscriptionId -Region $Region -KnowledgeDir (Join-Path $repo 'knowledge')
-$decision = Get-AqvDecision -Request $request -Quota $state.quota -SkuAccess $state.sku_access
+$decision = Get-AqvDecision -Request $request -Quota $state.quota -SkuAccess $state.sku_access -Rules $rules
 
 if ($AsJson) {
     $decision | ConvertTo-Json -Depth 8
@@ -81,6 +97,16 @@ Write-Host ''
 Write-Host ("  status     : {0}" -f $decision.status)
 Write-Host ("  reason     : {0}" -f $decision.reason)
 
+# Without a rules file this says what Azure permits. The platform may be
+# stricter, and the pipeline applies those rules.
+if ($RulesFile) {
+    Write-Host ("  rule       : {0}" -f $decision.rule_applied)
+}
+else {
+    Write-Host '  rule       : none applied — this is what Azure permits,' -ForegroundColor DarkYellow
+    Write-Host '               not what the platform would grant' -ForegroundColor DarkYellow
+}
+
 if ($decision.family) {
     Write-Host ("  use family : {0}" -f $decision.family) -ForegroundColor Cyan
 }
@@ -96,7 +122,9 @@ if ($writes.Count -gt 0) {
 # Only when the request itself was refused. A remediation is populated whenever
 # any family was denied, and showing it after a successful answer reads as
 # though something is wrong.
-if (-not $ok -and $decision.access.remediation) {
+# Only when ACCESS is what refused it. A rule refusal or a size refusal is not
+# fixed by a SKU access request, and saying so sends someone to the wrong queue.
+if ($decision.status -eq 'blocked_by_access' -and $decision.access.remediation) {
     Write-Host ''
     Write-Host ("  To lift it : {0}" -f $decision.access.remediation) -ForegroundColor Yellow
 }
@@ -108,6 +136,15 @@ if (-not $ok -and $denied.Count -gt 0) {
     $successors = @($decision.lifecycle.successors)
     if ($successors.Count -gt 0) {
         Write-Host ("  Use instead: {0}" -f ($successors -join ', '))
+    }
+}
+
+$sizes = @($decision.sizes | Where-Object { $_.vcpus -and $_.vcpus -le $VCpus } | Sort-Object { -$_.vcpus })
+if ($ok -and $sizes.Count -gt 0) {
+    Write-Host ''
+    Write-Host '  Sizes you can deploy:' -ForegroundColor Cyan
+    $sizes | Select-Object -First 5 | ForEach-Object {
+        Write-Host ("    {0,-26} {1,3} vCPU   deploy {2}" -f $_.name, $_.vcpus, $_.count_at)
     }
 }
 
