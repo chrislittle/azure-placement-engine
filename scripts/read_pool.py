@@ -24,14 +24,12 @@ import sys
 KNOWLEDGE_DIR = pathlib.Path(__file__).resolve().parent.parent / "knowledge"
 KNOWLEDGE = KNOWLEDGE_DIR / "vm-series-lifecycle.yaml"
 
-# Name prefixes for the classes capability data cannot express.
-# Mirrors knowledge/vm-series-classes.yaml; see that file for why each exists.
-CLASS_OVERRIDES = [
-    ("burstable", r"^standardB"),
-    ("storage_optimized", r"^standardL"),
-    ("hpc", r"^standardH"),
-    ("confidential", r"^standard(DC|EC)"),
-]
+# Categories are Azure Compute Fleet's `vmCategories` names. See
+# knowledge/vm-series-classes.yaml for why each rule exists and why the order
+# matters.
+FPGA_FAMILIES = r"^standardNP"
+STORAGE_FAMILIES = r"^standardL"
+BURSTABLE_FAMILIES = r"^standardB"
 
 REGIONAL_TOTALS = {"cores", "lowprioritycores", "virtualmachines", "virtualmachinescalesets"}
 
@@ -110,22 +108,27 @@ def growth_restricted():
     return set(re.findall(r"\bstandard\w*Family\b", block))
 
 
-def classify(family: str, ratios: list, has_gpu: bool):
-    """Workload class for a family: overrides, then GPU, then memory ratio."""
-    for name, pattern in CLASS_OVERRIDES:
-        if re.match(pattern, family, re.IGNORECASE):
-            return name
+def classify(family, ratios, has_gpu, has_rdma=False):
+    """Azure vmCategory for a family. Order matters; see the knowledge file."""
+    # NP reports a GPUs capability although its accelerators are FPGAs, so this
+    # must be tested before the GPU check or every NP lands in GpuAccelerated.
+    if re.match(FPGA_FAMILIES, family, re.IGNORECASE):
+        return "FpgaAccelerated"
     if has_gpu:
-        return "gpu"
+        return "GpuAccelerated"
+    if has_rdma:
+        return "HighPerformanceCompute"
+    if re.match(STORAGE_FAMILIES, family, re.IGNORECASE):
+        return "StorageOptimized"
     if not ratios:
         return None
     ratios = sorted(ratios)
     median = ratios[len(ratios) // 2]
     if median < 3:
-        return "compute_optimized"
+        return "ComputeOptimized"
     if median <= 6:
-        return "general_purpose"
-    return "memory_optimized"
+        return "GeneralPurpose"
+    return "MemoryOptimized"
 
 
 def read_skus(subscription: str, region: str) -> dict:
@@ -166,22 +169,40 @@ def project_skus(payload: dict) -> dict:
             gpus = float(caps.get("GPUs") or 0)
         except (TypeError, ValueError):
             gpus = 0.0
+        rdma = str(caps.get("RdmaEnabled", "")).lower() == "true"
+        confidential = bool(caps.get("ConfidentialComputingType"))
+        architecture = caps.get("CpuArchitectureType")
 
         entry = {"zones": zones, "restricted_zones": sorted(restricted)}
         if location_restricted:
             entry["location_restricted"] = True
         if reason:
             entry["restriction_reason"] = reason
-        fam = families.setdefault(family, {"sizes": {}, "_ratios": [], "_gpu": False})
+        fam = families.setdefault(family, {
+            "sizes": {}, "_ratios": [], "_gpu": False, "_rdma": False,
+            "_cc": False, "_arch": set(),
+        })
         fam["sizes"][sku["name"]] = entry
         if vcpus > 0:
             fam["_ratios"].append(memory / vcpus)
         fam["_gpu"] = fam["_gpu"] or gpus > 0
+        fam["_rdma"] = fam["_rdma"] or rdma
+        fam["_cc"] = fam["_cc"] or confidential
+        if architecture:
+            fam["_arch"].add(architecture)
 
-    classes = {}
+    attributes = {}
     for name, fam in families.items():
-        classes[name] = classify(name, fam.pop("_ratios"), fam.pop("_gpu"))
-    return families, classes
+        attributes[name] = {
+            "category": classify(
+                name, fam.pop("_ratios"), fam.pop("_gpu"), fam.pop("_rdma")
+            ),
+            # Flags rather than categories, matching how Azure models them.
+            "burstable": bool(re.match(BURSTABLE_FAMILIES, name, re.IGNORECASE)),
+            "confidential_computing": fam.pop("_cc"),
+            "architectures": sorted(fam.pop("_arch")),
+        }
+    return families, attributes
 
 
 if __name__ == "__main__":
@@ -208,12 +229,13 @@ if __name__ == "__main__":
     # access gap -- 796 of 866 VM SKUs in Germany North report no restriction at
     # all for a subscription that cannot deploy there -- but the projection is
     # what proves that, and callers may want it anyway.
-    sku_access, classes = ({}, {}) if not accessible else project_skus(read_skus(sub, region))
+    sku_access, attributes = ({}, {}) if not accessible else project_skus(read_skus(sub, region))
 
-    # Workload class is a property of the family, so it belongs on the pool
-    # entry the module ranks -- not on the access data.
+    # Category and attributes belong on the pool entry the module ranks,
+    # not on the access data.
     for name, entry in pool["families"].items():
-        if classes.get(name):
-            entry["class"] = classes[name]
+        attrs = attributes.get(name)
+        if attrs and attrs["category"]:
+            entry.update(attrs)
 
     print(json.dumps({"pool": pool, "sku_access": sku_access}, indent=2))

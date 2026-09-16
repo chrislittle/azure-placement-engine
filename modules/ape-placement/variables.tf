@@ -8,13 +8,20 @@ variable "request" {
   type = object({
     region = string
     vcpus  = number
-    # What a customer actually says. Narrowed further by `family_allowlist`
-    # (platform escape hatch) or `family` (I know exactly what I want), either
-    # of which takes precedence.
-    class            = optional(string)
-    family           = optional(string)
-    family_allowlist = optional(list(string))
-    environment      = optional(string, "prod")
+    # What a customer actually says, in Azure's own vocabulary -- these are
+    # Compute Fleet's `vmCategories` names. Narrowed further by
+    # `family_allowlist` (platform escape hatch) or `family` (I know exactly
+    # what I want), either of which takes precedence.
+    category = optional(string)
+
+    # Attributes rather than categories, matching how Azure models them.
+    # Omit one and it is not filtered on.
+    architecture           = optional(string) # x64 | Arm64
+    burstable              = optional(string) # Excluded | Required
+    confidential_computing = optional(string) # Excluded | Required
+    family                 = optional(string)
+    family_allowlist       = optional(list(string))
+    environment            = optional(string, "prod")
 
     # A freshly vended subscription is a NEW subscription, and new subscriptions
     # cannot deploy growth-restricted series at all -- not even within quota.
@@ -119,9 +126,13 @@ variable "pool" {
       used      = number
       available = optional(number)
 
-      # Workload class, derived from SKU capabilities by the caller.
+      # Azure vmCategory, derived from SKU capabilities by the caller.
       # See knowledge/vm-series-classes.yaml.
-      class = optional(string)
+      category = optional(string)
+
+      burstable              = optional(bool, false)
+      confidential_computing = optional(bool, false)
+      architectures          = optional(list(string), [])
 
       # Where the series sits in its lifecycle. `growth_restricted` is the July
       # 2026 capacity restriction: quota frozen at what is already approved, and

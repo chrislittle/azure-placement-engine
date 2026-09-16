@@ -43,7 +43,7 @@ run "healthy_looking_sku_data_does_not_override_the_region_gate" {
       regional_cores_limit = 100
       regional_cores_used  = 0
       families = {
-        standardDSv5Family = { limit = 100, used = 0, class = "general_purpose" }
+        standardDSv5Family = { limit = 100, used = 0, category = "GeneralPurpose" }
       }
     }
     sku_access = {
@@ -72,7 +72,7 @@ run "region_accessible_defaults_to_true" {
       regional_cores_limit = 100
       regional_cores_used  = 0
       families = {
-        standardDSv5Family = { limit = 100, used = 0, class = "general_purpose" }
+        standardDSv5Family = { limit = 100, used = 0, category = "GeneralPurpose" }
       }
     }
   }

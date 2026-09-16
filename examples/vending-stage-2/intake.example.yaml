@@ -13,6 +13,12 @@
 # nothing about quota. CAF names the gap without filling it: "review the
 # subscription quota limits before creating the subscription", and "the quota
 # request can fail, so you should run a script to handle any errors."
+#
+# Its vocabulary is Azure's, not ours: `category` takes Compute Fleet's
+# vmCategories values, and architecture, burstable and confidential_computing
+# are attributes rather than categories, exactly as Azure models them. We do not
+# use Compute Fleet -- this is VM vending -- but a request written here would
+# need no translation to be handed to it.
 
 request:
   # Trackable request from the ITSM tool or intake portal.
@@ -49,7 +55,15 @@ networking:
 compute:
   region: eastus
   vcpus: 64
-  class: memory_optimized               # see knowledge/vm-series-classes.yaml
+
+  # GeneralPurpose | ComputeOptimized | MemoryOptimized | StorageOptimized
+  # GpuAccelerated | FpgaAccelerated | HighPerformanceCompute
+  category: MemoryOptimized
+
+  # Optional attributes. Omit one and it is not filtered on.
+  architecture: x64                     # x64 | Arm64
+  burstable: Excluded                   # Excluded | Required
+  # confidential_computing: Required
 
   # regional | zonal | zone_redundant. Not a preference -- it decides which
   # families are eligible at all, since zone access is granted per SKU size and

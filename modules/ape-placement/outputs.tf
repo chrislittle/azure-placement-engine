@@ -28,10 +28,10 @@ output "decision" {
     status = local.status
     reason = local.reason
 
-    class  = local.wanted_class
-    region = var.request.region
-    vcpus  = var.request.vcpus
-    family = local.chosen
+    category = local.wanted_category
+    region   = var.request.region
+    vcpus    = var.request.vcpus
+    family   = local.chosen
 
     # Absolute, matching Microsoft.Quota semantics -- the value to write, not
     # an increment. Null when there is nothing to write.

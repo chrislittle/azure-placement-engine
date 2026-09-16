@@ -49,6 +49,9 @@ locals {
       memory              = tonumber(try([for c in s.capabilities : c.value if c.name == "MemoryGB"][0], 0))
       vcpus               = tonumber(try([for c in s.capabilities : c.value if c.name == "vCPUs"][0], 0))
       gpus                = tonumber(try([for c in s.capabilities : c.value if c.name == "GPUs"][0], 0))
+      rdma                = lower(try([for c in s.capabilities : c.value if c.name == "RdmaEnabled"][0], "false")) == "true"
+      confidential        = try([for c in s.capabilities : c.value if c.name == "ConfidentialComputingType"][0], "") != ""
+      architecture        = try([for c in s.capabilities : c.value if c.name == "CpuArchitectureType"][0], null)
     }
     if try(s.resourceType, "") == "virtualMachines" && try(s.family, "") != ""
   ]
@@ -68,12 +71,11 @@ locals {
     }
   }
 
-  # --- workload class ------------------------------------------------------
-  # Mirrors knowledge/vm-series-classes.yaml. Sorted as zero-padded strings
-  # because HCL has no median; the middle element of the sorted list is it.
-  classes_doc     = yamldecode(file("${local.knowledge}/vm-series-classes.yaml"))
-  class_overrides = try(local.classes_doc.overrides, {})
-
+  # --- category and attributes ---------------------------------------------
+  # Categories are Azure Compute Fleet's vmCategories names; see
+  # knowledge/vm-series-classes.yaml for the rules and why the order matters.
+  # Ratios are sorted as zero-padded strings because HCL has no median -- the
+  # middle element of the sorted list is it.
   family_ratios = {
     for f in local.vm_families : f => sort([
       for s in local.vm_skus : format("%09.3f", s.memory / max(s.vcpus, 1))
@@ -84,22 +86,30 @@ locals {
   family_gpu = {
     for f in local.vm_families : f => anytrue([for s in local.vm_skus : s.gpus > 0 if s.family == f])
   }
-
-  family_override = {
-    for f in local.vm_families : f => try([
-      for name, pattern in local.class_overrides : name
-      if length(regexall("(?i)${pattern}", f)) > 0
-    ][0], null)
+  family_rdma = {
+    for f in local.vm_families : f => anytrue([for s in local.vm_skus : s.rdma if s.family == f])
+  }
+  family_confidential = {
+    for f in local.vm_families : f => anytrue([for s in local.vm_skus : s.confidential if s.family == f])
+  }
+  family_architectures = {
+    for f in local.vm_families : f => sort(distinct(compact([
+      for s in local.vm_skus : try(s.architecture, "") if s.family == f
+    ])))
   }
 
-  family_class = {
+  family_category = {
     for f in local.vm_families : f => (
-      local.family_override[f] != null ? local.family_override[f] :
-      local.family_gpu[f] ? "gpu" :
+      # NP reports a GPUs capability although its accelerators are FPGAs, so
+      # this must be tested before the GPU check.
+      length(regexall("(?i)^standardNP", f)) > 0 ? "FpgaAccelerated" :
+      local.family_gpu[f] ? "GpuAccelerated" :
+      local.family_rdma[f] ? "HighPerformanceCompute" :
+      length(regexall("(?i)^standardL", f)) > 0 ? "StorageOptimized" :
       length(local.family_ratios[f]) == 0 ? null :
-      tonumber(local.family_ratios[f][floor(length(local.family_ratios[f]) / 2)]) < 3 ? "compute_optimized" :
-      tonumber(local.family_ratios[f][floor(length(local.family_ratios[f]) / 2)]) <= 6 ? "general_purpose" :
-      "memory_optimized"
+      tonumber(local.family_ratios[f][floor(length(local.family_ratios[f]) / 2)]) < 3 ? "ComputeOptimized" :
+      tonumber(local.family_ratios[f][floor(length(local.family_ratios[f]) / 2)]) <= 6 ? "GeneralPurpose" :
+      "MemoryOptimized"
     )
   }
 
@@ -112,8 +122,13 @@ locals {
       for f, q in local.quota_families : f => {
         limit     = q.limit
         used      = q.used
-        class     = try(local.family_class[f], null)
         lifecycle = contains(local.growth_restricted, f) ? "growth_restricted" : "current"
+
+        category = try(local.family_category[f], null)
+        # Flags rather than categories, matching how Azure models them.
+        burstable              = length(regexall("(?i)^standardB", f)) > 0
+        confidential_computing = try(local.family_confidential[f], false)
+        architectures          = try(local.family_architectures[f], [])
       }
     }
   }

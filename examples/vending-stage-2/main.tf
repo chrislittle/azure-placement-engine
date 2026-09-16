@@ -46,12 +46,15 @@ locals {
   compute = local.intake.compute
 
   request = {
-    region           = local.compute.region
-    vcpus            = local.compute.vcpus
-    class            = try(local.compute.class, null)
-    family           = try(local.compute.family, null)
-    family_allowlist = try(local.compute.family_allowlist, null)
-    placement        = try(local.compute.placement, {})
+    region                 = local.compute.region
+    vcpus                  = local.compute.vcpus
+    category               = try(local.compute.category, null)
+    architecture           = try(local.compute.architecture, null)
+    burstable              = try(local.compute.burstable, null)
+    confidential_computing = try(local.compute.confidential_computing, null)
+    family                 = try(local.compute.family, null)
+    family_allowlist       = try(local.compute.family_allowlist, null)
+    placement              = try(local.compute.placement, {})
 
     # DevTest and prod land on different rules; the intake already says which.
     environment = local.intake.subscription.environment
