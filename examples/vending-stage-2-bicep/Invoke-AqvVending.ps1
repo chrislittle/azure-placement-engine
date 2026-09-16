@@ -27,6 +27,11 @@ param(
     # The subscription request both stages read.
     [string]$RequestFile = (Join-Path $PSScriptRoot '..' 'vending-stage-2' 'request.example.yaml'),
 
+    # Business rules, owned by the platform team. One file for the platform, not
+    # one per request. The Terraform path takes the same file through
+    # -var rules_file, so both paths apply the same rules.
+    [string]$RulesFile = (Join-Path $PSScriptRoot '..' 'vending-stage-2' 'rules.example.yaml'),
+
     [string]$ParamFile = (Join-Path $PSScriptRoot 'aqv-apply.bicepparam'),
 
     # Off by default so the decision can be reviewed before anything is written.
@@ -73,16 +78,9 @@ $request = @{
     new_subscription       = $true
 }
 
-# Business rules belong to the platform team, not the requester, so they live
-# here rather than in the subscription request.
-$rules = @(
-    @{
-        name            = 'devtest stays off GPU and stays small'
-        environments    = @('devtest')
-        family_denylist = @('standardNCSv3Family', 'standardNVSv4Family')
-        max_vcpus       = 32
-    }
-)
+# Business rules belong to the platform team, not the requester, so they live in
+# their own file rather than in the subscription request.
+$rules = @((ConvertFrom-Yaml (Get-Content $RulesFile -Raw)).rules)
 
 Write-Host "Reading $($compute.region) for $SubscriptionId ..." -ForegroundColor Cyan
 $state = Get-AqvState -SubscriptionId $SubscriptionId -Region $compute.region -KnowledgeDir (Join-Path $repo 'knowledge')

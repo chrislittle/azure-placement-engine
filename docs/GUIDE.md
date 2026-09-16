@@ -92,6 +92,11 @@ Both files are read by the deployment pipeline. Neither is read by Azure.
 Steps 1 to 9 are the platform team. Steps 10 to 12 are the workload team.
 Steps 1 to 5 write nothing to Azure.
 
+Where a step differs between the Terraform path and the Bicep path, or between
+the command line and the portal, each one is behind a heading you can open.
+GitHub does not render tabs, so these are collapsible sections instead. The
+first is open already.
+
 ### 1. Get the modules
 
 Copy this repository into your platform repository, or reference it directly.
@@ -105,9 +110,9 @@ cd azure-quota-vending
 
 One file for the whole platform. Start minimal and add rules later.
 
-```bash
-mkdir -p platform
-cat > platform/rules.yaml <<'YAML'
+`platform/rules.yaml`:
+
+```yaml
 rules:
   - name: devtest stays small
     environments: [devtest]
@@ -115,7 +120,6 @@ rules:
 
   - name: default
     max_vcpus: 128
-YAML
 ```
 
 [`examples/vending-stage-2/rules.example.yaml`](../examples/vending-stage-2/rules.example.yaml)
@@ -129,9 +133,9 @@ Rules are evaluated in order. The first match wins. Put a rule with no
 In production the request pipeline generates this from the intake form. To try
 it by hand:
 
-```bash
-mkdir -p requests
-cat > requests/my-app.yaml <<'YAML'
+`requests/my-app.yaml`:
+
+```yaml
 subscription:
   environment: prod
 
@@ -139,7 +143,6 @@ compute:
   region: eastus
   vcpus: 8
   category: GeneralPurpose
-YAML
 ```
 
 Ask for a size the subscription can actually reach. A new subscription often has
@@ -150,34 +153,105 @@ asking for more.
 
 Before wiring anything up, check the answer by hand. This needs only `Reader`.
 
+<details open>
+<summary><b>Terraform</b></summary>
+
 ```bash
 cd examples/what-can-i-deploy
 terraform init
 terraform apply -var subscription_id=$SUB -var region=eastus -var vcpus=8
 ```
+</details>
+
+<details>
+<summary><b>PowerShell</b></summary>
 
 ```powershell
-# or, without Terraform
+cd examples/what-can-i-deploy
 ./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8
 ```
+</details>
 
-You will get back a family name, or a reason why not. Nothing is written.
+There is no Bicep here. Bicep only writes, and this asks a question.
+
+Both give the same answer. The PowerShell one formats it for a person:
+
+```text
+  Can I deploy 8 vCPUs in eastus?
+  Yes
+
+  status     : satisfied
+  reason     : existing quota covers the request
+  rule       : none — this is the quota the subscription has
+  use family : StandardDadsv7Family
+
+  Sizes you can deploy:
+    Standard_D8ads_v7            8 vCPU   deploy 1
+    Standard_D4ads_v7            4 vCPU   deploy 2
+    Standard_D2ads_v7            2 vCPU   deploy 4
+
+  Why not the others:
+    StandardDadsv7Family               limit=10     unused=10     chosen
+    standardAv2Family                  limit=10     unused=10     eligible, outranked
+    StandardFadsv7Family               limit=10     unused=10     eligible, outranked
+```
+
+Terraform returns the same decision as named outputs — `answer`, `sizes`,
+`why_not_the_others`, `blocked` and `what_would_need_writing`. Nothing is
+written on either path.
 
 ### 5. Run stage 2 without writing
+
+<details open>
+<summary><b>Terraform</b></summary>
 
 ```bash
 cd examples/vending-stage-2
 terraform init
-terraform apply   -var subscription_id=$SUB   -var request_file=../../requests/my-app.yaml   -var rules_file=../../platform/rules.yaml
+terraform apply \
+  -var subscription_id=$SUB \
+  -var request_file=../../requests/my-app.yaml \
+  -var rules_file=../../platform/rules.yaml
 ```
+`apply_writes` defaults to false, so this writes nothing.
 
-`apply_writes` defaults to false, so this shows the decision and writes nothing.
+</details>
+
+<details>
+<summary><b>Bicep</b></summary>
+
+```powershell
+cd examples/vending-stage-2-bicep
+./Invoke-AqvVending.ps1 -SubscriptionId $sub `
+    -RequestFile ../../requests/my-app.yaml `
+    -RulesFile ../../platform/rules.yaml
+```
+PowerShell reads and decides; Bicep only writes. Without `-Deploy` this writes a
+`.bicepparam` and stops. See
+[Why Bicep works differently](#why-bicep-works-differently).
+
+</details>
+
+Both apply the same rules and reach the same decision. Terraform prints it
+through the `summary` output:
 
 ```text
 status      : satisfied
 reason      : existing quota covers the request
 rule applied: default
 family      : StandardDadsv7Family
+writes      : 0
+```
+
+`satisfied` with no writes means the quota is already there. A request the rules
+refuse looks like this instead — the same command against a `devtest` request
+for 64 vCPUs:
+
+```text
+status      : blocked_by_rule
+reason      : rule "devtest stays small" caps requests at 32 vCPUs
+rule applied: devtest stays small
+family      : none
 writes      : 0
 ```
 
@@ -188,22 +262,62 @@ all you needed. Steps 6 to 9 matter when the answer is `needs_increase` or
 ### 6. Grant the pipeline identity its rights
 
 Only now does anything need write access. Two roles on the target subscription:
+`Reader` and `Quota Request Operator`.
+
+<details open>
+<summary><b>Azure CLI</b></summary>
 
 ```bash
 APP_ID=$(az ad app create --display-name aqv-pipeline --query appId -o tsv)
 az ad sp create --id "$APP_ID"
 
-az role assignment create --assignee "$APP_ID"   --role "Reader" --scope "/subscriptions/$SUB"
+az role assignment create --assignee "$APP_ID" \
+  --role "Reader" --scope "/subscriptions/$SUB"
 
-az role assignment create --assignee "$APP_ID"   --role "Quota Request Operator" --scope "/subscriptions/$SUB"
+az role assignment create --assignee "$APP_ID" \
+  --role "Quota Request Operator" --scope "/subscriptions/$SUB"
+```
+</details>
+
+<details>
+<summary><b>Azure PowerShell</b></summary>
+
+```powershell
+$app = New-AzADApplication -DisplayName aqv-pipeline
+New-AzADServicePrincipal -ApplicationId $app.AppId
+
+New-AzRoleAssignment -ApplicationId $app.AppId `
+    -RoleDefinitionName 'Reader' -Scope "/subscriptions/$sub"
+
+New-AzRoleAssignment -ApplicationId $app.AppId `
+    -RoleDefinitionName 'Quota Request Operator' -Scope "/subscriptions/$sub"
 ```
 
+</details>
+
+<details>
+<summary><b>Portal</b></summary>
+
+1. **Microsoft Entra ID** > **App registrations** > **New registration**. Name
+   it `aqv-pipeline` and register it. Copy the **Application (client) ID**.
+2. Open the subscription > **Access control (IAM)** > **Add** > **Add role
+   assignment**.
+3. Pick **Reader**, then **Members** > **Select members**, and choose
+   `aqv-pipeline`. Review and assign.
+4. Repeat from step 2 for **Quota Request Operator**.
+
+</details>
+
 `Quota Request Operator` is the built-in role that carries
-`Microsoft.Quota/quotas/write`. Contributor also works and grants far more.
+`Microsoft.Quota/quotas/write`, and `Microsoft.Support/*` with it. Contributor
+also works and grants far more.
 
 ### 7. Let GitHub Actions use that identity
 
 A federated credential, so no secret is stored:
+
+<details open>
+<summary><b>Azure CLI</b></summary>
 
 ```bash
 az ad app federated-credential create --id "$APP_ID" --parameters '{
@@ -213,6 +327,37 @@ az ad app federated-credential create --id "$APP_ID" --parameters '{
   "audiences": ["api://AzureADTokenExchange"]
 }'
 ```
+</details>
+
+<details>
+<summary><b>Azure PowerShell</b></summary>
+
+```powershell
+$app = Get-AzADApplication -DisplayName aqv-pipeline
+
+New-AzADAppFederatedCredential -ApplicationObjectId $app.Id `
+    -Name aqv-main `
+    -Issuer 'https://token.actions.githubusercontent.com' `
+    -Subject 'repo:YOUR-ORG/YOUR-REPO:ref:refs/heads/main' `
+    -Audience 'api://AzureADTokenExchange'
+```
+
+</details>
+
+<details>
+<summary><b>Portal</b></summary>
+
+1. **Microsoft Entra ID** > **App registrations** > `aqv-pipeline`.
+2. **Certificates & secrets** > **Federated credentials** > **Add credential**.
+3. Scenario: **GitHub Actions deploying Azure resources**.
+4. Enter your organization and repository, entity type **Branch**, branch
+   `main`, and name it `aqv-main`.
+
+</details>
+
+The subject must match what the workflow presents. A workflow that runs on a tag
+or in an environment needs a different subject, and a mismatch fails the login
+without saying why.
 
 Then set the two repository variables the workflows read:
 
@@ -241,12 +386,52 @@ Run it from the Actions tab, or call it from your stage 1 workflow:
 
 ### 9. Let it write
 
+<details open>
+<summary><b>Terraform</b></summary>
+
 ```bash
 terraform apply -var subscription_id=$SUB -var apply_writes=true
 ```
+</details>
+
+<details>
+<summary><b>Bicep</b></summary>
+
+```powershell
+./Invoke-AqvVending.ps1 -SubscriptionId $sub -Deploy
+```
+</details>
+
+A quota write is slow. Raising one family limit from 10 to 16 took three and a
+half minutes:
+
+```text
+module.apply.azapi_update_resource.family[0]: Creating...
+module.apply.azapi_update_resource.family[0]: Still creating... [00m10s elapsed]
+...
+module.apply.azapi_update_resource.family[0]: Creation complete after 3m37s
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+applied = [
+  {
+    "granted" = 16
+    "name" = "StandardDsv6Family"
+    "requested" = 16
+    "scope" = "family"
+  },
+]
+```
+
+`granted` is read back from Azure rather than assumed, so it can be lower than
+`requested`.
 
 A refused quota write fails the run on purpose. See
-[Reading a decision](#reading-a-decision) for what each refusal means.
+[Reading a decision](#reading-a-decision) for what each refusal means, and
+[Azure behaviour to know](#azure-behaviour-to-know) for the case where the write
+succeeds and Terraform reports a failure anyway.
 
 ---
 
@@ -262,17 +447,61 @@ guidance already has a step for this: *"Update the data collection tool request
 with the final subscription name and GUID… Notify the application team that the
 subscription is ready."* The decision belongs in that notification.
 
-What they receive is `decision.json`. Captured from a real run:
+What they receive is `decision.json`. This is a real run: a `prod` request for
+8 vCPUs of `GeneralPurpose` in `eastus`, against a subscription whose regional
+cap is 16 vCPUs and whose limit on the chosen family is 10. Only `considered` is
+left out, because it lists every one of the 15 families that were weighed.
 
 ```json
 {
-  "status": "satisfied",
+  "access": {
+    "checked": true,
+    "denied": [],
+    "not_offered": [],
+    "placement": "regional",
+    "provider_registered": true,
+    "region_accessible": true,
+    "region_zonal": true,
+    "remediation": null,
+    "requestable": false,
+    "unverified": [],
+    "verified": true,
+    "zone_count": 0,
+    "zones": []
+  },
+  "category": "GeneralPurpose",
   "family": "StandardDadsv7Family",
+  "lifecycle": {
+    "denied": [
+      "standardBSFamily",
+      "standardDASv4Family",
+      "standardDDSv4Family",
+      "standardDDv4Family",
+      "standardDSv3Family",
+      "standardDSv4Family",
+      "standardDv3Family",
+      "standardDv4Family"
+    ],
+    "frozen": [],
+    "new_subscription": true,
+    "successors": []
+  },
+  "preference": "most_unused",
+  "reason": "existing quota covers the request",
+  "region": "eastus",
+  "regional": {
+    "increase_required": false,
+    "limit": 16,
+    "target": 16,
+    "unused": 16,
+    "used": 0
+  },
+  "rule_applied": "default",
   "sizes": [
     {
+      "count_at": 1,
       "name": "Standard_D8ads_v7",
       "vcpus": 8,
-      "count_at": 1,
       "zones": [
         "1",
         "2",
@@ -280,9 +509,9 @@ What they receive is `decision.json`. Captured from a real run:
       ]
     },
     {
+      "count_at": 2,
       "name": "Standard_D4ads_v7",
       "vcpus": 4,
-      "count_at": 2,
       "zones": [
         "1",
         "2",
@@ -290,9 +519,9 @@ What they receive is `decision.json`. Captured from a real run:
       ]
     },
     {
+      "count_at": 4,
       "name": "Standard_D2ads_v7",
       "vcpus": 2,
-      "count_at": 4,
       "zones": [
         "1",
         "2",
@@ -300,26 +529,36 @@ What they receive is `decision.json`. Captured from a real run:
       ]
     }
   ],
-  "regional": {
-    "limit": 10,
-    "used": 0,
-    "unused": 10
-  }
+  "status": "satisfied",
+  "target_limit": 10,
+  "unknown_families": [],
+  "vcpus": 8
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `family` | The VM family their quota is for. |
-| `sizes` | What to actually deploy. `count_at` is how many of that size the request needs. |
-| `regional.limit` | The region-wide vCPU cap, shared across every family in the subscription. |
+| `status` | `satisfied` means the quota was already there and nothing was written. |
+| `family` | The VM family the quota is for. A family cannot be deployed; a size can. |
+| `sizes` | What to actually deploy, largest first. `count_at` is how many of that size the request needs. |
+| `sizes[].zones` | The zones that size can go in, after Azure's restrictions are subtracted. This is per size, not per vCPU. |
+| `regional.limit` | The region-wide vCPU cap, shared by every family in the subscription. |
+| `lifecycle.denied` | Families a new subscription cannot deploy at all, under the July 2026 capacity growth restrictions. |
+| `access.remediation` | `null` here because nothing was refused. It names the ticket to raise when something was. |
+
+`sizes` stops at 8 vCPUs even though the family has larger ones. A single
+`Standard_D16ads_v7` would need 16 vCPUs of quota and the limit is 10, so
+naming it would be wrong.
 
 If the request was refused they get the reason instead, and no quota was
 written:
 
 ```text
-status : blocked_by_rule
-reason : rule "devtest stays off GPU and stays small" caps requests at 32 vCPUs
+status      : blocked_by_rule
+reason      : rule "devtest stays small" caps requests at 32 vCPUs
+rule applied: devtest stays small
+family      : none
+writes      : 0
 ```
 
 ### 11. They can check for themselves, at any time
@@ -327,23 +566,66 @@ reason : rule "devtest stays off GPU and stays small" caps requests at 32 vCPUs
 They do not have to rely on a message from weeks ago. With only `Reader` on
 their own subscription:
 
+<details open>
+<summary><b>PowerShell</b></summary>
+
 ```powershell
 ./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8
 ```
-
 ```text
   Can I deploy 8 vCPUs in eastus?
   Yes
 
   status     : satisfied
   reason     : existing quota covers the request
+  rule       : none — this is the quota the subscription has
   use family : StandardDadsv7Family
 
   Sizes you can deploy:
     Standard_D8ads_v7            8 vCPU   deploy 1
     Standard_D4ads_v7            4 vCPU   deploy 2
     Standard_D2ads_v7            2 vCPU   deploy 4
+
+  Why not the others:
+    StandardDadsv7Family               limit=10     unused=10     chosen
+    standardAv2Family                  limit=10     unused=10     eligible, outranked
+    StandardFadsv7Family               limit=10     unused=10     eligible, outranked
 ```
+
+</details>
+
+<details>
+<summary><b>Terraform</b></summary>
+
+```bash
+terraform apply -var subscription_id=$SUB -var region=eastus -var vcpus=8
+```
+The same decision, as outputs. `answer` carries the status and the family;
+`sizes` carries the same list:
+
+```text
+sizes = [
+  {
+    "count_at" = 1
+    "name" = "Standard_D8ads_v7"
+    "vcpus" = 8
+    "zones" = tolist([
+      "1",
+      "2",
+      "3",
+    ])
+  },
+  {
+    "count_at" = 2
+    "name" = "Standard_D4ads_v7"
+    "vcpus" = 4
+    ...
+  },
+]
+```
+
+</details>
+
 
 This reads the quota the subscription actually has. It does not apply the
 platform's rules, and it does not need to: the rules already decided what quota
@@ -698,6 +980,10 @@ Three refusal codes, **none retryable**:
 | `QuotaNotAvailableForResource` | Capacity is not there for this subscription. A smaller ask fares no better. |
 | `DeprecatedQuotaType` | The family is growth-restricted. `aqv-decide` predicts this one, so it should never reach the apply. |
 
+`PreconditionFailed` is not one of these. It comes from polling the operation,
+not from the decision, and it has been seen on a write that Azure completed. Read
+the quota back before treating it as a refusal.
+
 ---
 
 ## GitHub Actions
@@ -775,7 +1061,8 @@ gh api -X POST repos/OWNER/REPO/actions/runners/registration-token -q .token
 
 ```bash
 # On the runner machine, in a NEW directory beside the existing runner
-./config.sh --url https://github.com/OWNER/REPO --token <TOKEN>   --name aqv-ci-linux --labels aqv-ci-linux --unattended
+./config.sh --url https://github.com/OWNER/REPO --token <TOKEN> \
+  --name aqv-ci-linux --labels aqv-ci-linux --unattended
 sudo ./svc.sh install && sudo ./svc.sh start
 ```
 
@@ -813,6 +1100,10 @@ rejected. Review it in the pull request before anything is written.
 | New subscriptions cannot deploy the 30 growth-restricted series at all. | This is not a limit on growth. It is a block on deployment. |
 | A `202` from a quota PUT means Azure accepted the request for review. | It is not an approval. Poll for the result. |
 | `isQuotaApplicable` can return `true` for a family whose write is then refused. | Do not use it as a pre-check. |
+| A quota write can succeed in Azure and still fail the Terraform apply. Polling the operation returned `412 PreconditionFailed` while the request history recorded `Succeeded`. | Read the quota back after a failed apply. A rerun is safe, because `limit` is absolute rather than a delta. |
+| Only the caller that submitted a quota write can poll its operation status. Another principal gets `AuthorizationFailed`. | A failed write cannot be investigated from a different session. Check `quotaRequests` history instead. |
+| Raising a family limit can raise the regional cap with it. Raising one family from 10 to 16 moved the regional cap from 30 to 36 unasked. | Do not cache the regional cap across a write, and do not read the change as drift. |
+| A grant is slower than a refusal. The one grant observed took 3m37s; refusals came back in about 35 seconds. | A short timeout fails the successful case first. |
 
 ## Why Bicep works differently
 
@@ -850,6 +1141,8 @@ holds one set of scenarios. Both implementations must pass all of them.
 
 **Quota groups.** `Microsoft.Quota/groupQuotas` would let a platform pool quota
 across subscriptions and reallocate it self-service — including harvesting
+quota that a subscription holds and never uses.
+
 The contract is in place: set `quota.families[*].available` and the decision
 returns `needs_allocation` instead of `needs_increase`. Testing it needs an EA,
 MCA-Enterprise or Internal billing account.

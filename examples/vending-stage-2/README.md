@@ -76,17 +76,30 @@ platform team, not the requester.
 
 ## What a decision looks like
 
-Running the sample request against a PayAsYouGo subscription with a regional cap
-of 10 vCPUs:
+`request.example.yaml` asks for 64 memory-optimized vCPUs.
+`rules.example.yaml` restricts production to three approved families. Run
+against a PayAsYouGo subscription whose family limits are all 10:
 
-```
-status : infeasible
-reason : no candidate family can reach 64 vCPUs
-class  : memory_optimized
-considered: 21 families, 11 refused by the capacity growth restrictions
+```text
+status      : infeasible
+reason      : no candidate family can reach 64 vCPUs
+rule applied: production uses approved families, cheapest first
+family      : none
+writes      : 0
 ```
 
-That is the correct answer. It arrives during vending, with the reasoning
-attached, instead of as a failed deployment later.
+That is the correct answer, and it arrives during vending with the reasoning
+attached instead of as a failed deployment weeks later. `decision.considered`
+carries the two families that were weighed and how far short each one fell.
+
+`summary` is the short version above. `decision` carries the whole answer, and
+`writes_required` carries what the apply step would write.
+
+### Family names are case sensitive
+
+`rules.example.yaml` spells each family exactly as Azure returns it. Azure is
+not consistent about this: `standardDFamily` is lower case, `StandardDsv6Family`
+is not. A name that does not match is absent from the quota, and the decision
+comes back `infeasible` with nothing considered.
 
 [vending]: https://learn.microsoft.com/en-us/azure/architecture/landing-zones/subscription-vending

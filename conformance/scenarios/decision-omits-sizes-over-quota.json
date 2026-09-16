@@ -1,5 +1,5 @@
 {
-  "description": "The decision names deployable sizes, not just a family. A family cannot be deployed; a size can. Terraform returned an empty list here while PowerShell did not, because the vCPU count was never carried through the read.",
+  "description": "A size the quota cannot run is not named as deployable. The family limit is 8 vCPUs, so one Standard_D16s_v6 would exceed it on its own and must not be offered. Sizes come back largest first, so the fewest instances come first.",
   "request": {
     "region": "eastus",
     "vcpus": 8,
@@ -10,7 +10,7 @@
     "regional_cores_used": 0,
     "families": {
       "standardDsv6Family": {
-        "limit": 100,
+        "limit": 8,
         "used": 0,
         "category": "GeneralPurpose"
       }
@@ -19,6 +19,22 @@
   "sku_access": {
     "standardDsv6Family": {
       "sizes": {
+        "Standard_D2s_v6": {
+          "zones": [
+            "1",
+            "2",
+            "3"
+          ],
+          "vcpus": 2
+        },
+        "Standard_D16s_v6": {
+          "zones": [
+            "1",
+            "2",
+            "3"
+          ],
+          "vcpus": 16
+        },
         "Standard_D8s_v6": {
           "zones": [
             "1",
@@ -34,13 +50,6 @@
             "3"
           ],
           "vcpus": 4
-        },
-        "Standard_D2s_v6": {
-          "zones": [
-            "1",
-            "2"
-          ],
-          "vcpus": 2
         }
       }
     }
@@ -49,6 +58,7 @@
   "expect": {
     "status": "satisfied",
     "family": "standardDsv6Family",
+    "target_limit": 8,
     "sizes": 3,
     "size_names": "Standard_D8s_v6,Standard_D4s_v6,Standard_D2s_v6"
   }

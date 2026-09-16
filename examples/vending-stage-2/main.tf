@@ -118,6 +118,19 @@ module "apply" {
   enabled         = var.apply_writes
 }
 
+# The short version, for a pipeline log or a pull request comment. `decision`
+# below carries the same answer with every family it considered, which is too
+# much to read at a glance.
+output "summary" {
+  value = <<-EOT
+    status      : ${module.decide.decision.status}
+    reason      : ${module.decide.decision.reason}
+    rule applied: ${coalesce(module.decide.decision.rule_applied, "none")}
+    family      : ${coalesce(module.decide.decision.family, "none")}
+    writes      : ${length(module.decide.writes_required)}
+  EOT
+}
+
 output "decision" { value = module.decide.decision }
 output "writes_required" { value = module.decide.writes_required }
 output "applied" { value = module.apply.applied }

@@ -74,6 +74,10 @@ locals {
       length(module.placement[name].decision.sizes) == s.expect.sizes ? "" :
       "sizes: expected ${s.expect.sizes}, got ${length(module.placement[name].decision.sizes)}",
 
+      !contains(keys(s.expect), "size_names") ? "" :
+      join(",", module.placement[name].decision.sizes[*].name) == s.expect.size_names ? "" :
+      "size_names: expected ${s.expect.size_names}, got ${join(",", module.placement[name].decision.sizes[*].name)}",
+
       !contains(keys(s.expect), "rule_applied") ? "" :
       module.placement[name].decision.rule_applied == s.expect.rule_applied ? "" :
       "rule_applied: expected ${s.expect.rule_applied}, got ${module.placement[name].decision.rule_applied}",

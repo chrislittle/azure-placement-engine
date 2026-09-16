@@ -305,12 +305,20 @@ locals {
     local.chosen_detail.used + var.request.vcpus,
   )
 
+  # The most vCPUs of the chosen family this subscription will be able to run.
+  # The regional cap binds separately from the family limit, so the smaller of
+  # the two is the real ceiling.
+  size_budget = local.chosen_detail == null ? 0 : min(local.target_limit, local.regional_target)
+
   # Sizes the workload team can actually deploy in the chosen family.
   #
   # A family is not deployable. A size is. The decision names the family, so it
   # also has to name the sizes inside it that fit the request and survive the
   # zone restrictions, or the workload team is left to work that out alone.
-  chosen_sizes = local.chosen == null ? [] : [
+  #
+  # A size larger than the budget is listed nowhere. One instance of it would
+  # exceed the quota, so naming it as deployable would be false.
+  deployable_sizes = local.chosen == null ? [] : [
     for sz in try(local.size_access[local.chosen], []) : {
       name  = sz.name
       vcpus = sz.vcpus
@@ -320,10 +328,21 @@ locals {
       count_at = sz.vcpus == null ? null : ceil(var.request.vcpus / max(sz.vcpus, 1))
     }
     if !sz.location_restricted && (
+      sz.vcpus == null ? false : sz.vcpus <= local.size_budget
+      ) && (
       local.placement_type == "regional"
       || (local.placement_type == "zonal" && length(setsubtract(toset(local.wanted_zones), toset(sz.effective_zones))) == 0)
       || (local.placement_type == "zone_redundant" && length(sz.effective_zones) >= local.wanted_zone_count)
     )
+  ]
+
+  # Largest first, so the fewest instances come first. Alphabetical order would
+  # put Standard_D128ads_v7 ahead of Standard_D2ads_v7, which reads as nonsense.
+  # The name breaks a tie, so both implementations agree on the order.
+  chosen_sizes = [
+    for k in sort([
+      for sz in local.deployable_sizes : format("%09d|%s", 999999999 - sz.vcpus, sz.name)
+    ]) : one([for sz in local.deployable_sizes : sz if sz.name == split("|", k)[1]])
   ]
 
   regional_increase_required = var.request.vcpus > local.regional_unused

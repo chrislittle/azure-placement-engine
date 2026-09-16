@@ -296,30 +296,39 @@ function Get-AqvDecision {
     $chosenDetail = if ($chosen) { @($reachable | Where-Object family -EQ $chosen)[0] } else { $null }
 
     $targetLimit = if ($chosenDetail) { [Math]::Max($chosenDetail.limit, $chosenDetail.used + $vcpus) } else { $null }
+    $regionalIncreaseRequired = $vcpus -gt $regionalUnused
+    $regionalTarget = [Math]::Max($regionalLimit, $regionalUsed + $vcpus)
+
+    # The most vCPUs of the chosen family this subscription will be able to run.
+    # The regional cap binds separately from the family limit, so the smaller of
+    # the two is the real ceiling.
+    $sizeBudget = if ($null -ne $chosenDetail) { [Math]::Min($targetLimit, $regionalTarget) } else { 0 }
+
     # Sizes the workload team can actually deploy in the chosen family. A family
-    # is not deployable; a size is.
+    # is not deployable; a size is. A size larger than the budget is listed
+    # nowhere: one instance of it would exceed the quota.
     $chosenSizes = @()
     if ($chosen -and $sizeAccess.ContainsKey($chosen)) {
         $chosenSizes = @($sizeAccess[$chosen] | Where-Object {
                 $eff = @($_.effective_zones)
-                (-not $_.location_restricted) -and (
+                $sv = if ($null -ne $_.vcpus) { [int]$_.vcpus } else { 0 }
+                (-not $_.location_restricted) -and ($sv -gt 0) -and ($sv -le $sizeBudget) -and (
                     ($placementType -eq 'regional') -or
                     ($placementType -eq 'zonal' -and @($wantedZones | Where-Object { $_ -notin $eff }).Count -eq 0) -or
                     ($placementType -eq 'zone_redundant' -and $eff.Count -ge $wantedZoneCount)
                 )
             } | ForEach-Object {
-                $sv = if ($null -ne $_.vcpus) { [int]$_.vcpus } else { 0 }
+                $sv = [int]$_.vcpus
                 [pscustomobject]@{
                     name     = $_.name
-                    vcpus    = if ($sv -gt 0) { $sv } else { $null }
+                    vcpus    = $sv
                     zones    = @($_.effective_zones)
-                    count_at = if ($sv -gt 0) { [int][Math]::Ceiling($vcpus / $sv) } else { $null }
+                    count_at = [int][Math]::Ceiling($vcpus / $sv)
                 }
-            })
+                # Largest first, so the fewest instances come first. The name
+                # breaks a tie, so both implementations agree on the order.
+            } | Sort-Object -Property @{ Expression = 'vcpus'; Descending = $true }, @{ Expression = 'name'; Descending = $false })
     }
-
-    $regionalIncreaseRequired = $vcpus -gt $regionalUnused
-    $regionalTarget = [Math]::Max($regionalLimit, $regionalUsed + $vcpus)
 
     $allBlockedByLifecycle = ($lifecyclePermitted.Count -eq 0) -and ($lifecycleDenied.Count -gt 0)
     $allBlockedByAccess = $accessChecked -and ($accessPermitted.Count -eq 0) -and

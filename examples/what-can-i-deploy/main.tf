@@ -129,6 +129,15 @@ output "answer" {
   }
 }
 
+output "sizes" {
+  description = <<-EOT
+    What to actually deploy. A family cannot be deployed; a size can. Largest
+    first, so the fewest instances come first. `count_at` is how many of that
+    size the requested vCPUs need.
+  EOT
+  value       = module.decide.decision.sizes
+}
+
 output "what_would_need_writing" {
   description = <<-EOT
     Empty means the quota is already there. Anything here needs the platform

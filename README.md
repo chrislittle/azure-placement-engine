@@ -10,8 +10,6 @@
 > The quota group and capacity reservation layers are designed but not built,
 > and are untested against the billing account types that support them.
 
-*(name is a placeholder)*
-
 Sets the vCPU quota on a newly vended Azure subscription, and tells the
 application team which VM family to use.
 
@@ -107,7 +105,7 @@ published.
 - [x] `aqv-read` — live quota, SKU availability and region access, all Terraform
 - [x] `aqv-apply` — write quota, with the refusal semantics documented
 - [x] `examples/vending-stage-2` — the handoff contract and a sample request
-- [x] Bicep path — PowerShell read/decide, `aqv-apply.bicep` write, 23 shared scenarios
+- [x] Bicep path — PowerShell read/decide, `aqv-apply.bicep` write, 25 shared scenarios
 
 ## Design
 

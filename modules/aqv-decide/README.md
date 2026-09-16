@@ -148,8 +148,9 @@ with no `environments` matches every request, so place it last.
 ### The regional cap
 
 `regional_cores_limit` applies to every family. It is not the sum of the family
-limits. It is usually much smaller. A subscription can report a cap of 10 vCPUs
-and 97 families that each report 10 to 12.
+limits. It is usually much smaller. One PayAsYouGo subscription in eastus
+reports a regional cap of 16 vCPUs, and 201 family entries, 91 of which report a
+limit between 10 and 12.
 
 Ranking on unused family quota alone therefore finds vCPUs that cannot be deployed.
 Every decision respects the cap. When the cap binds, `writes_required` raises it
@@ -192,15 +193,23 @@ treats that as unproven, not as unlimited. This is what separates
 
 `family` names a quota bucket. A workload is deployed as a size. `sizes`
 therefore lists the sizes inside the chosen family that survive the placement
-type and the zone restrictions:
+type and the zone restrictions, largest first:
 
-```text
-Standard_D8ads_v7    8 vCPU   count_at 1
-Standard_D4ads_v7    4 vCPU   count_at 2
+```json
+[
+  { "name": "Standard_D8ads_v7", "vcpus": 8, "count_at": 1, "zones": ["1", "2", "3"] },
+  { "name": "Standard_D4ads_v7", "vcpus": 4, "count_at": 2, "zones": ["1", "2", "3"] },
+  { "name": "Standard_D2ads_v7", "vcpus": 2, "count_at": 4, "zones": ["1", "2", "3"] }
+]
 ```
 
 `count_at` is how many of that size the requested vCPUs need. It is populated
 only when `sku_access` carries a `vcpus` for the size, which `aqv-read` supplies.
+
+A size larger than the quota is not listed. The ceiling is the smaller of
+`target_limit` and the regional target, because one instance of a size above it
+would exceed the limit on its own. The example above stops at 8 vCPUs against a
+family limit of 10.
 
 ### Rejected candidates are recorded
 

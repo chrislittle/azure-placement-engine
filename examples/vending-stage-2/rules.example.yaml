@@ -21,10 +21,14 @@ rules:
   - name: production uses approved families, cheapest first
     environments: [prod]
     # Only these families may be chosen, whatever the request asks for.
+    # Azure's own casing, exactly. Matching is case sensitive, and Azure is not
+    # consistent: standardDFamily is lower case, StandardDsv6Family is not. A
+    # name that does not match is simply absent from the quota, and the answer
+    # comes back infeasible with nothing considered.
     family_allowlist:
-      - standardDsv6Family
-      - standardDdsv6Family
-      - standardEsv6Family
+      - StandardEsv6Family
+      - StandardEdsv6Family
+      - StandardDsv6Family
     # listed_order walks the allowlist above in order, so the first entry is
     # tried first. The default, most_unused, would pick whichever family has the
     # most room instead.

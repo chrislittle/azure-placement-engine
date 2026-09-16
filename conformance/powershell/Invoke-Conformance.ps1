@@ -32,6 +32,7 @@ $checks = [ordered]@{
     'region_zonal'               = { param($d) $d.access.region_zonal }
     'not_offered'                = { param($d) @($d.access.not_offered).Count }
     'sizes'                      = { param($d) @($d.sizes).Count }
+    'size_names'                 = { param($d) (@($d.sizes) | ForEach-Object name) -join ',' }
     'rule_applied'               = { param($d) $d.rule_applied }
 }
 

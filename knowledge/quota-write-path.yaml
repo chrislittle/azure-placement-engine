@@ -28,6 +28,18 @@ outcomes:
     http: 200
     note: Limit applied in the response. Documented; not observed on this subscription.
 
+  evaluated_then_granted_observed:
+    http: 202, then provisioningState Succeeded
+    observed: >
+      StandardDsv6Family 10 -> 16 in centralus on 2026-09-16, through
+      modules/aqv-apply. Terraform reported "Creation complete after 3m37s" and
+      the applied output read back granted = 16. eastus refused every family
+      tried; centralus granted on the first ask, so the region matters more
+      than the family.
+    note: >
+      Three and a half minutes, against the 35 seconds a refusal took. A grant
+      is the SLOW path here, which is the opposite of the usual assumption.
+
   evaluated_then_granted:
     http: 202 + Location + Retry-After 30
     then: poll until provisioningState == Succeeded
@@ -70,6 +82,38 @@ outcomes:
       escalating changes it. The error text carries the recommended successors,
       which is the only place that mapping appears.
 
+# A SUCCESSFUL WRITE CAN SURFACE AS A TERRAFORM FAILURE.
+#
+# This is the nastiest of the observed behaviours, because the apply stops with
+# an error and the quota is changed anyway.
+succeeded_but_reported_failed:
+  http: 202, then GET operationsStatus -> 412 PreconditionFailed
+  observed: >
+    cores 10 -> 16 in eastus on 2026-09-16 through modules/aqv-apply. azapi
+    failed with 'RESPONSE 412: PreconditionFailed - Specified precondition was
+    no longer valid' while polling operationsStatus. The quotaRequests history
+    recorded the same operation as Succeeded, "Request completed.", and the
+    limit read back as 16. Terraform aborted before the second write in the
+    same apply, so that one never ran.
+  implication: >
+    Re-read the quota after a failed apply before concluding nothing changed. A
+    rerun is safe -- limit is absolute, not a delta -- but a pipeline that
+    treats the failure as "no change" will report the wrong state.
+  note: >
+    Polling operationsStatus as a different principal returns
+    AuthorizationFailed: 'Unable to verify that the user that sent this request
+    is the original caller'. Only the caller that submitted the write can poll
+    it, so a failure cannot be investigated from another session.
+
+# Raising a family limit can also raise the regional cap.
+regional_cap_moves_with_the_family:
+  observed: >
+    centralus regional 'cores' was 30 before StandardDsv6Family was raised
+    10 -> 16, and 36 afterwards. Nothing asked for the regional change.
+  implication: >
+    Do not cache the regional cap across a write, and do not treat a regional
+    increase in the diff as drift. Read it back.
+
 # isQuotaApplicable reads like a pre-check. It is not a reliable one.
 # standardDSv3Family reported isQuotaApplicable: true and then failed the PUT
 # with DeprecatedQuotaType. Same failure mode as the other fields in
@@ -103,6 +147,8 @@ implications:
 #   QuotaNotAvailableForResource   capacity is not there for this subscription
 #   DeprecatedQuotaType            family is growth-restricted; 400, immediate
 refusal_codes: [ContactSupport, QuotaNotAvailableForResource, DeprecatedQuotaType]
+# PreconditionFailed is NOT in this list on purpose: it is a polling failure,
+# not a refusal. See succeeded_but_reported_failed above.
 
 # Composition with vending, checked 2026-09-16 against
 # Azure/terraform-azure-avm-ptn-alz-sub-vending.
