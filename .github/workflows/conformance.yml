@@ -3,6 +3,17 @@
 #
 # Needs no Azure subscription and no credentials: every module under test either
 # holds no resources or is pure evaluation.
+#
+# runs-on comes from repository variables so this works two ways: unset, it uses
+# GitHub-hosted runners, which is what anyone cloning this repo wants. Set to a
+# self-hosted label, it routes there instead.
+#
+#   CI_RUNNER_LINUX     e.g. a self-hosted Linux runner label
+#   CI_RUNNER_WINDOWS   e.g. a self-hosted Windows runner label
+#
+# The PowerShell job wants pwsh and the Bicep job wants the Azure CLI, so point
+# CI_RUNNER_WINDOWS at a machine that has PowerShell and CI_RUNNER_LINUX at one
+# with `az`.
 
 name: conformance
 
@@ -18,7 +29,7 @@ permissions:
 jobs:
   terraform:
     name: Terraform — unit tests and scenarios
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +55,7 @@ jobs:
 
   powershell:
     name: PowerShell — shared scenarios
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_WINDOWS || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,7 +65,7 @@ jobs:
 
   bicep:
     name: Bicep — template compiles
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 

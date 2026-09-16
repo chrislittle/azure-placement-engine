@@ -37,7 +37,7 @@ permissions:
 
 jobs:
   place:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_WINDOWS || 'ubuntu-latest' }}
     # Gate the write path on a protected environment. An expression here is
     # fragile, so this is left for you to set -- add `environment: quota-write`
     # and require a reviewer on it if quota changes need approval.

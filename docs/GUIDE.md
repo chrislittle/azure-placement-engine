@@ -420,6 +420,51 @@ with `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` as
 repository variables. The federated credential needs Reader and Quota Request
 Operator on the vended subscription.
 
+### Choosing runners
+
+`runs-on` is driven by two repository variables, so the workflows work
+unchanged for anyone who clones this repo and route to your own machines when
+you want them to:
+
+| Variable | Unset | Set |
+|---|---|---|
+| `CI_RUNNER_LINUX` | `ubuntu-latest` | that label — Terraform and Bicep jobs |
+| `CI_RUNNER_WINDOWS` | `ubuntu-latest` | that label — PowerShell jobs |
+
+The PowerShell jobs want `pwsh` and the Bicep job wants the Azure CLI, so point
+`CI_RUNNER_WINDOWS` at a machine with PowerShell and `CI_RUNNER_LINUX` at one
+with `az`.
+
+> **Self-hosted runners cannot be shared between repositories on a personal
+> account.** Runner *groups*, the mechanism for sharing, exist only for
+> organizations. A machine already running a runner for another repo can host a
+> second, independent registration for this one — same machine, separate
+> directory and service.
+
+```bash
+# Mint a registration token (expires in one hour)
+gh api -X POST repos/OWNER/REPO/actions/runners/registration-token -q .token
+```
+
+```bash
+# On the runner machine, in a NEW directory beside the existing runner
+./config.sh --url https://github.com/OWNER/REPO --token <TOKEN>   --name ape-ci-linux --labels ape-ci-linux --unattended
+sudo ./svc.sh install && sudo ./svc.sh start
+```
+
+Then set the variable to the label you chose:
+
+```bash
+gh variable set CI_RUNNER_LINUX --body ape-ci-linux
+```
+
+> Do not set the variable before the runner is registered and online, or jobs
+> queue waiting for a runner that does not exist.
+
+**A public repository gets unlimited GitHub-hosted minutes** for standard
+runners, so if this repo is going public anyway, that removes the problem
+without any of the above.
+
 ### Reviewing before writing
 
 The useful shape is **plan on the PR, apply on merge**. Stage 2 plans cleanly
