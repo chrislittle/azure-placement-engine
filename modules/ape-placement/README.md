@@ -78,8 +78,28 @@ On a live subscription, `standardDFamily` is **satisfied** regionally and
 > if it proves false, the regional branch in `family_deployable` is the one line
 > to change.
 
+### Quota is not evidence a family exists
+
+A family can report a healthy quota limit in a region where Azure offers no
+sizes of it. On a live subscription, **14 of the 97 families holding quota in
+East US had zero SKUs there** — NC v1, H, basicA, the Promo families. Ranking on
+quota alone picks one of these and produces a placement with nothing to deploy.
+
+So `sku_access` must be **complete for the region or empty**. When supplied it is
+authoritative: `Microsoft.Compute/skus` lists every SKU Azure has in the region
+including restricted ones, so absence means the family is not offered. That
+lands in `access.not_offered`, distinct from `access.denied`, because no support
+ticket will change it.
+
 Leave `sku_access` empty to skip the check. The decision then reports
 `access.verified = false` rather than implying it passed.
+
+### Some regions have no zones
+
+West Central US reports 916 VM SKUs and not one availability zone. A zonal
+request there is refused with `access.region_zonal = false` and
+`requestable = false` — there is no ticket that adds zones to a region, and
+saying otherwise sends someone after something they cannot get.
 
 ## Status values
 

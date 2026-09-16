@@ -56,17 +56,26 @@ output "decision" {
     # Access is a gate in its own right, and APE only reports on it -- closing
     # an access gap is a support request, not something a module can do.
     access = {
-      checked     = local.access_checked
-      verified    = local.access_checked && local.chosen != null && !contains(local.access_unverified, local.chosen)
-      placement   = local.placement_type
-      zones       = local.placement_type == "zonal" ? local.wanted_zones : []
-      zone_count  = local.wanted_zone_count
-      denied      = local.access_denied
-      unverified  = local.access_unverified
+      checked   = local.access_checked
+      verified  = local.access_checked && local.chosen != null
+      placement = local.placement_type
+      # False means the region has no availability zones at all, which no
+      # access request can change.
+      region_zonal = !local.access_checked ? null : local.region_zonal
+      zones        = local.placement_type == "zonal" ? local.wanted_zones : []
+      zone_count   = local.wanted_zone_count
+      denied       = local.access_denied
+      unverified   = local.access_unverified
+      # Quota exists, but Azure offers no sizes of the family in this region.
+      # Not a permissions problem and not fixable by a support ticket.
+      not_offered = local.not_offered
       requestable = local.requestable
       # Portal path for both: Help + support -> Create a support request ->
       # Service and subscription limits (quotas) -> Compute-VM (cores-vCPUs).
-      remediation = length(local.access_denied) == 0 ? null : (
+      remediation = local.zonal_request && local.access_checked && !local.region_zonal ? format(
+        "%s has no availability zones. Deploy regionally, or pick a region that has them -- there is no ticket for this.",
+        var.request.region,
+        ) : length(local.access_denied) == 0 ? null : (
         !local.requestable
         ? "QuotaId: the subscription offer excludes these SKUs. No support ticket will lift this -- choose a different family."
         : local.denied_by_location

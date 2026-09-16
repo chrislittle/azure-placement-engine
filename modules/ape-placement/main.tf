@@ -114,6 +114,15 @@ locals {
     ]
   }
 
+  # Some regions have no availability zones at all. Telling someone to raise a
+  # zone access request for one of those sends them after a ticket that cannot
+  # be fulfilled -- West Central US reports 916 VM SKUs and not a single zone.
+  region_zonal = anytrue(flatten([
+    for sizes in values(local.size_access) : [for sz in sizes : length(sz.effective_zones) > 0]
+  ]))
+
+  zonal_request = local.placement_type != "regional"
+
   # A family is deployable if at least ONE of its sizes satisfies the placement
   # type -- customers buy a family's worth of quota but deploy a specific size.
   #
@@ -139,9 +148,22 @@ locals {
     for f, sizes in local.size_access : f => distinct(compact([for sz in sizes : sz.reason]))
   }
 
+  # A family absent from the region's SKU data is not merely unverified -- it
+  # is not offered. Microsoft.Compute/skus lists every SKU Azure has in the
+  # region INCLUDING the restricted ones, so absence means there are no sizes
+  # to deploy at all.
+  #
+  # Quota for such a family still exists and reads perfectly normally. On a
+  # live subscription, 14 of 97 families holding quota in East US had no SKUs
+  # there -- NC v1, H, basicA, the Promo families -- and treating absence as
+  # "unknown but allowed" let the module rank and CHOOSE one of them.
+  not_offered = !local.access_checked ? [] : [
+    for f in local.lifecycle_permitted : f if !contains(keys(local.size_access), f)
+  ]
+
   access_permitted = !local.access_checked ? local.lifecycle_permitted : [
     for f in local.lifecycle_permitted : f
-    if !contains(keys(local.size_access), f) || local.family_deployable[f]
+    if contains(keys(local.size_access), f) && local.family_deployable[f]
   ]
 
   access_denied = !local.access_checked ? [] : [
@@ -149,11 +171,10 @@ locals {
     if contains(keys(local.size_access), f) && !local.family_deployable[f]
   ]
 
-  # Present in the pool, absent from the SKU data. Permitted, but never
-  # reported as verified -- silence is not evidence of access.
-  access_unverified = !local.access_checked ? local.lifecycle_permitted : [
-    for f in local.lifecycle_permitted : f if !contains(keys(local.size_access), f)
-  ]
+  # Only meaningful when the check was skipped entirely. With SKU data present,
+  # nothing is unverified -- a family is offered and assessed, or it is not
+  # offered.
+  access_unverified = local.access_checked ? [] : local.lifecycle_permitted
 
   # Per-family arithmetic.
   #
@@ -234,7 +255,7 @@ locals {
     for f in local.lifecycle_denied : coalesce(var.pool.families[f].successors, [])
   ]))
 
-  all_blocked_by_access = local.access_checked && length(local.access_permitted) == 0 && length(local.access_denied) > 0
+  all_blocked_by_access = local.access_checked && length(local.access_permitted) == 0 && (length(local.access_denied) > 0 || length(local.not_offered) > 0)
 
   status = (
     local.over_rule_cap ? "blocked_by_rule" :
@@ -247,7 +268,12 @@ locals {
   )
 
   # Whether an access gap is worth raising a ticket over, or is simply final.
-  requestable = contains(flatten([for f in local.access_denied : local.family_reasons[f]]), "NotAvailableForSubscription")
+  # Nothing to request when the region simply has no zones.
+  requestable = (
+    local.zonal_request && local.access_checked && !local.region_zonal
+    ? false
+    : contains(flatten([for f in local.access_denied : local.family_reasons[f]]), "NotAvailableForSubscription")
+  )
 
   # The three access requests are different tickets with different forms, so
   # naming the wrong one sends someone down the wrong queue. A denial where
@@ -262,6 +288,15 @@ locals {
     local.all_blocked_by_lifecycle ? format(
       "every candidate family is under the capacity growth restriction, which a new subscription cannot deploy at all%s",
       length(local.suggested_successors) > 0 ? format("; use %s instead", join(", ", local.suggested_successors)) : "",
+    ) :
+    local.all_blocked_by_access && local.zonal_request && !local.region_zonal ? format(
+      "%s has no availability zones, so a %s placement is impossible there -- deploy regionally or choose a zonal region",
+      var.request.region,
+      local.placement_type == "zonal" ? "zonal" : "zone-redundant",
+    ) :
+    local.all_blocked_by_access && length(local.access_denied) == 0 ? format(
+      "no candidate family is offered in %s; quota for them exists but Azure has no sizes to deploy there",
+      var.request.region,
     ) :
     local.all_blocked_by_access ? format(
       "no candidate family has %s access on this subscription; %s",

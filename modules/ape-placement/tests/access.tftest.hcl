@@ -233,7 +233,10 @@ run "unchecked_access_is_never_reported_as_verified" {
   }
 }
 
-run "family_missing_from_sku_data_is_permitted_but_unverified" {
+# Quota for a family can exist in a region where Azure offers no sizes of it.
+# On a live subscription, 14 of 97 families holding quota in East US had no
+# SKUs there, and the module used to rank and choose one.
+run "family_absent_from_sku_data_is_not_offered_not_merely_unknown" {
   command = plan
 
   variables {
@@ -246,11 +249,112 @@ run "family_missing_from_sku_data_is_permitted_but_unverified" {
   }
 
   assert {
-    condition     = contains(output.decision.access.unverified, "standardLsv2Family")
-    error_message = "a family absent from the SKU data must be flagged, not assumed good"
+    condition     = output.decision.status == "blocked_by_access"
+    error_message = "a family with no SKUs in the region has nothing to deploy"
   }
   assert {
-    condition     = !output.decision.access.verified
-    error_message = "silence is not evidence of access"
+    condition     = contains(output.decision.access.not_offered, "standardLsv2Family")
+    error_message = "it should be reported as not offered, distinct from access-denied"
+  }
+  assert {
+    condition     = strcontains(output.decision.reason, "no sizes to deploy")
+    error_message = "the reason should not suggest a support ticket for this"
+  }
+}
+
+# The regression that prompted the fix: an offered family must win over one
+# that merely has quota.
+run "an_offered_family_beats_a_phantom_one_with_more_quota" {
+  command = plan
+
+  variables {
+    request = { region = "eastus", vcpus = 4 }
+    pool = {
+      regional_cores_limit = 500
+      regional_cores_used  = 0
+      families = {
+        standardNVPromoFamily = { limit = 200, used = 0 }
+        standardLsv2Family    = { limit = 20, used = 0 }
+      }
+    }
+    sku_access = {
+      standardLsv2Family = {
+        sizes = { Standard_L8s_v2 = { zones = ["1", "2", "3"] } }
+      }
+    }
+  }
+
+  assert {
+    condition     = output.decision.family == "standardLsv2Family"
+    error_message = "the phantom family has ten times the quota and nothing to deploy"
+  }
+  assert {
+    condition     = contains(output.decision.access.not_offered, "standardNVPromoFamily")
+    error_message = "the phantom family should be named"
+  }
+}
+
+# West Central US reports 916 VM SKUs and not a single availability zone.
+# Telling someone to raise a zone access request there sends them after a
+# ticket that cannot be fulfilled.
+run "a_non_zonal_region_is_not_an_access_gap" {
+  command = plan
+
+  variables {
+    request = {
+      region    = "westcentralus"
+      vcpus     = 4
+      placement = { type = "zonal", zones = ["1"] }
+    }
+    pool = {
+      regional_cores_limit = 500
+      regional_cores_used  = 0
+      families             = { standardDSv5Family = { limit = 100, used = 0 } }
+    }
+    sku_access = {
+      standardDSv5Family = {
+        sizes = { Standard_D8s_v5 = { zones = [] } }
+      }
+    }
+  }
+
+  assert {
+    condition     = output.decision.status == "blocked_by_access"
+    error_message = "a zonal placement in a non-zonal region cannot succeed"
+  }
+  assert {
+    condition     = output.decision.access.region_zonal == false
+    error_message = "the region should be reported as having no zones"
+  }
+  assert {
+    condition     = !output.decision.access.requestable
+    error_message = "there is no ticket that adds zones to a region"
+  }
+  assert {
+    condition     = strcontains(output.decision.reason, "no availability zones")
+    error_message = "the reason must say the region has no zones, not blame subscription access"
+  }
+}
+
+run "regional_placement_in_a_non_zonal_region_is_fine" {
+  command = plan
+
+  variables {
+    request = { region = "westcentralus", vcpus = 4 }
+    pool = {
+      regional_cores_limit = 500
+      regional_cores_used  = 0
+      families             = { standardDSv5Family = { limit = 100, used = 0 } }
+    }
+    sku_access = {
+      standardDSv5Family = {
+        sizes = { Standard_D8s_v5 = { zones = [] } }
+      }
+    }
+  }
+
+  assert {
+    condition     = output.decision.status == "satisfied"
+    error_message = "no zones is irrelevant to a regional placement"
   }
 }

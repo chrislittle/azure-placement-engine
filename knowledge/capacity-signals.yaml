@@ -52,3 +52,20 @@ signals:
       QuotaId means the subscription's offer excludes the SKU -- a support ticket
       will not change it, and reporting it as requestable wastes the customer's
       time.
+
+  quota-for-a-family-with-no-skus:
+    api: Microsoft.Compute/locations/{region}/usages vs Microsoft.Compute/skus
+    scope: subscription x region
+    use: false
+    reviewed: 2026-09-16
+    note: >
+      A family can report a healthy quota limit in a region where Azure offers
+      no sizes of it at all. On a live subscription in East US, 14 of the 97
+      families holding quota had zero SKUs in that region -- NC v1, H, basicA,
+      the Promo families. Quota reads perfectly normally and there is nothing
+      to deploy.
+
+      So a quota reading is not evidence that a family is usable. Cross-check
+      against Microsoft.Compute/skus for the region, which lists every SKU
+      Azure has there including restricted ones: absence from that list means
+      the family is not offered, which no support ticket will change.

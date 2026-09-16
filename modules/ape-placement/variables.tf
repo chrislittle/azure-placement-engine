@@ -60,6 +60,12 @@ variable "sku_access" {
     restricting 1, 2 and 3 -- reading `zones` alone says "two zones available"
     when the answer is none.
 
+    Must be COMPLETE for the region, or empty. When supplied it is treated as
+    authoritative: a family absent from it is taken to be unavailable in that
+    region, because `Microsoft.Compute/skus` lists every SKU Azure has there
+    including the restricted ones. Absence means there are no sizes to deploy,
+    even though quota for the family may read perfectly normally.
+
     Leave empty to skip the access check entirely. The decision then reports
     `access.verified = false` rather than implying the check passed.
   EOT

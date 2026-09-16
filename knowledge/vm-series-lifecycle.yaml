@@ -86,10 +86,17 @@ growth_restricted_families:
     - standardGSFamily
   storage_optimized: [standardLSFamily, standardLSv2Family]
 
-unmatched_note: >
-  The doc also lists B and Amv2. Neither resolved to a family in the eastus SKU
-  data -- B appears only as standardBSFamily there, and Amv2 not at all. Resolve
-  them against a region that offers them before relying on the list being complete.
+# Resolved 2026-09-16 against eastus, westeurope, westus2 and centralus SKU
+# data: all 29 names above appear in at least one region, and the two the doc
+# names separately are not separate quota families.
+naming_notes:
+  amv2: >
+    Not its own family. The Amv2 sizes (Standard_A2m_v2, A4m_v2, A8m_v2) live
+    inside standardAv2Family, which is already listed.
+  b_and_bs: >
+    Both map to the single standardBSFamily. Do NOT add standardBsv2Family,
+    standardBasv2Family or standardBpsv2Family -- those are the newer v2
+    burstable families and are not restricted.
 
 # From the doc's own migration table. Deliberately coarse: the right target
 # depends on storage and performance requirements, and APE should surface the
