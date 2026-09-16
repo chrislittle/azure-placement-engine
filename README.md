@@ -37,6 +37,9 @@ Neither does anything with quota today, which is the gap this fills.
 There is no service and no state of its own — Azure's own APIs are the source of
 truth, and the modules read, decide, and write.
 
+**[Read the manual](docs/GUIDE.md)** — how to run it, what the answers mean,
+where it slots into vending, and the GitHub Actions to wire it up.
+
 ## Status
 
 Read and decide are built and working against live subscriptions; the apply
@@ -89,6 +92,8 @@ headroom comes from rather than how the decision is made.
 | `powershell/` | The same read and decide, for the Bicep path |
 | `bicep/` | `ape-apply.bicep` — the Bicep half of the Bicep path |
 | `conformance/` | One set of scenarios both implementations must pass |
+| `docs/GUIDE.md` | The manual |
+| `.github/workflows/` | Conformance, and stage 2 for both paths |
 | `examples/vending-stage-2/` | The stage-2 pattern, with a sample intake |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
 | `docs/decisions/` | Dated architectural decisions |

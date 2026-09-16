@@ -1,0 +1,76 @@
+# Stage 2 of subscription vending: quota and placement, Bicep path.
+#
+# Bicep cannot read quota state -- see docs/decisions/0001 -- so PowerShell reads
+# and decides, and Bicep only writes. Same intake file and same answers as the
+# Terraform path; conformance.yml is what keeps them the same.
+
+name: vend stage 2 (bicep)
+
+on:
+  workflow_dispatch:
+    inputs:
+      subscription_id:
+        description: From stage 1 — avm-ptn-sub-vending's subscription_id output
+        required: true
+      intake_file:
+        description: Subscription parameter file, relative to the repository root
+        default: examples/vending-stage-2/intake.example.yaml
+      deploy:
+        description: Write the quota. Leave false to review the decision first.
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      subscription_id:
+        type: string
+        required: true
+      intake_file:
+        type: string
+        default: examples/vending-stage-2/intake.example.yaml
+      deploy:
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  place:
+    runs-on: ubuntu-latest
+    # Gate the write path on a protected environment. An expression here is
+    # fragile, so this is left for you to set -- add `environment: quota-write`
+    # and require a reviewer on it if quota changes need approval.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reader plus Quota Request Operator on the vended subscription.
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ inputs.subscription_id }}
+          enable-AzPSSession: true
+
+      - name: Install powershell-yaml
+        shell: pwsh
+        run: Install-Module powershell-yaml -Force -Scope CurrentUser -AllowClobber
+
+      # Writes ape-apply.bicepparam and, with -Deploy, runs the deployment.
+      # Exits non-zero when the decision produced no workable placement.
+      - name: Read, decide, apply
+        shell: pwsh
+        run: |
+          $params = @{
+            SubscriptionId = '${{ inputs.subscription_id }}'
+            IntakeFile     = '${{ inputs.intake_file }}'
+          }
+          if ('${{ inputs.deploy }}' -eq 'true') { $params.Deploy = $true }
+          ./examples/vending-stage-2-bicep/Invoke-ApeVending.ps1 @params
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bicepparam
+          path: examples/vending-stage-2-bicep/ape-apply.bicepparam

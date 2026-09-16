@@ -1,0 +1,120 @@
+# Stage 2 of subscription vending: quota and placement, Terraform path.
+#
+# Runs AFTER stage 1 has created the subscription, against a subscription that
+# already exists -- which is why the decision is visible in the plan before
+# anything is written.
+#
+# Callable from a stage-1 workflow:
+#
+#   stage-2-quota:
+#     needs: stage-1-vending
+#     uses: ./.github/workflows/vend-stage-2-terraform.yml
+#     with:
+#       subscription_id: ${{ needs.stage-1-vending.outputs.subscription_id }}
+#       intake_file: requests/contoso-payments-api.yaml
+#       apply_writes: true
+
+name: vend stage 2 (terraform)
+
+on:
+  workflow_dispatch:
+    inputs:
+      subscription_id:
+        description: From stage 1 — avm-ptn-sub-vending's subscription_id output
+        required: true
+      intake_file:
+        description: Subscription parameter file, relative to examples/vending-stage-2
+        default: intake.example.yaml
+      apply_writes:
+        description: Write the quota. Leave false to review the decision first.
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      subscription_id:
+        type: string
+        required: true
+      intake_file:
+        type: string
+        default: intake.example.yaml
+      apply_writes:
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  place:
+    runs-on: ubuntu-latest
+    # Gate the write path on a protected environment. An expression here is
+    # fragile, so this is left for you to set -- add `environment: quota-write`
+    # and require a reviewer on it if quota changes need approval.
+    defaults:
+      run:
+        working-directory: examples/vending-stage-2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Federated credential needs Reader and Quota Request Operator on the
+      # vended subscription. Quota Request Operator is the built-in role with
+      # Microsoft.Quota/quotas/write.
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ inputs.subscription_id }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - run: terraform init -input=false
+
+      # The whole decision -- chosen family, quota to be written, why every
+      # other family lost -- is visible here, before anything is written.
+      - name: Plan
+        run: |
+          terraform plan -input=false \
+            -var subscription_id='${{ inputs.subscription_id }}' \
+            -var intake_file='${{ inputs.intake_file }}' \
+            -var apply_writes=${{ inputs.apply_writes }} \
+            -out tfplan
+
+      - name: Apply
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Decision
+        id: decision
+        run: |
+          terraform output -json decision > decision.json
+          {
+            echo '### Placement decision'
+            echo
+            echo '```'
+            jq -r '"status : \(.status)\nreason : \(.reason)\nfamily : \(.family // "none")\ncategory: \(.category // "any")"' decision.json
+            echo '```'
+            echo
+            jq -e '.access.remediation != null' decision.json >/dev/null \
+              && echo "**Remediation:** $(jq -r .access.remediation decision.json)" || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # A decision that produced no workable placement is a failed vending, not
+      # a warning: the subscription cannot run the workload it was asked for.
+      - name: Fail on an unworkable placement
+        run: |
+          status=$(jq -r .status decision.json)
+          case "$status" in
+            satisfied|needs_allocation|needs_increase) echo "ok: $status" ;;
+            not_ready) echo "::warning::Providers not registered yet -- retry shortly."; exit 1 ;;
+            *) echo "::error::Placement failed: $status -- $(jq -r .reason decision.json)"; exit 1 ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: placement-decision
+          path: examples/vending-stage-2/decision.json

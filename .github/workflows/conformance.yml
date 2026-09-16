@@ -1,0 +1,62 @@
+# The decision logic exists twice -- once in HCL for the Terraform path, once in
+# PowerShell for the Bicep path. This is what stops the two drifting apart.
+#
+# Needs no Azure subscription and no credentials: every module under test either
+# holds no resources or is pure evaluation.
+
+name: conformance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform — unit tests and scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Formatting
+        run: terraform fmt -check -recursive modules examples conformance
+
+      - name: Unit tests
+        working-directory: modules/ape-placement
+        run: |
+          terraform init -backend=false -input=false
+          terraform test
+
+      - name: Shared scenarios
+        working-directory: conformance/terraform
+        run: |
+          terraform init -backend=false -input=false
+          terraform apply -auto-approve -input=false
+
+  powershell:
+    name: PowerShell — shared scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shared scenarios
+        shell: pwsh
+        run: ./conformance/powershell/Invoke-Conformance.ps1 -Detailed
+
+  bicep:
+    name: Bicep — template compiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: az bicep build --file bicep/ape-apply.bicep --stdout > /dev/null
