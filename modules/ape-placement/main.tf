@@ -21,6 +21,14 @@ locals {
 
   # Candidates, narrowed in order: what the request asked for, then what the
   # rule permits.
+  # Region access is the outermost gate -- ahead of lifecycle, access and quota,
+  # because none of those mean anything in a region the subscription cannot
+  # reach. Compute usages answers NoRegisteredProviderFound there, while
+  # Microsoft.Compute/skus returns a full, unrestricted-looking catalogue: 796
+  # of 866 VM SKUs in Germany North report no restriction whatsoever for a
+  # subscription that cannot deploy there.
+  region_accessible = coalesce(try(var.pool.region_accessible, null), true)
+
   wanted_class = try(var.request.class, null)
 
   class_matched = local.wanted_class == null ? [] : sort([
@@ -272,6 +280,7 @@ locals {
   all_blocked_by_access = local.access_checked && length(local.access_permitted) == 0 && (length(local.access_denied) > 0 || length(local.not_offered) > 0)
 
   status = (
+    !local.region_accessible ? "blocked_by_region" :
     local.class_unmatched ? "infeasible" :
     local.over_rule_cap ? "blocked_by_rule" :
     local.all_blocked_by_lifecycle ? "blocked_by_lifecycle" :
@@ -299,6 +308,10 @@ locals {
   ])
 
   reason = (
+    !local.region_accessible ? format(
+      "the subscription has no access to %s; this needs a region access request and no amount of quota will help",
+      var.request.region,
+    ) :
     local.class_unmatched ? format(
       "the subscription holds no %s quota in %s", local.wanted_class, var.request.region,
     ) :

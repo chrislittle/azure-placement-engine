@@ -11,6 +11,8 @@ output "decision" {
                        evaluated, not granted, and are refused when regional
                        capacity is short -- so this is NOT a promise
       blocked_by_rule  a business rule refused the request
+      blocked_by_region the subscription cannot reach the region at all.
+                       Nothing below this matters until it is granted
       blocked_by_lifecycle every candidate is under the July 2026 capacity
                        growth restriction, which a NEW subscription cannot
                        deploy at all. Successors are named in the reason
@@ -63,10 +65,12 @@ output "decision" {
       # False means the region has no availability zones at all, which no
       # access request can change.
       region_zonal = !local.access_checked ? null : local.region_zonal
-      zones        = local.placement_type == "zonal" ? local.wanted_zones : []
-      zone_count   = local.wanted_zone_count
-      denied       = local.access_denied
-      unverified   = local.access_unverified
+      # False means the subscription has no access to the region at all.
+      region_accessible = local.region_accessible
+      zones             = local.placement_type == "zonal" ? local.wanted_zones : []
+      zone_count        = local.wanted_zone_count
+      denied            = local.access_denied
+      unverified        = local.access_unverified
       # Quota exists, but Azure offers no sizes of the family in this region.
       # Not a permissions problem and not fixable by a support ticket.
       not_offered = local.not_offered

@@ -104,6 +104,11 @@ variable "pool" {
   type = object({
     regional_cores_limit = number
     regional_cores_used  = number
+
+    # False when the subscription has no access to the region at all. The
+    # Compute usages call is the only probe for this: Microsoft.Compute/skus
+    # happily returns data for a region you cannot deploy to.
+    region_accessible = optional(bool, true)
     families = map(object({
       limit     = number
       used      = number

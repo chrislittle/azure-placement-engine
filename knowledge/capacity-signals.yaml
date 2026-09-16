@@ -69,3 +69,22 @@ signals:
       against Microsoft.Compute/skus for the region, which lists every SKU
       Azure has there including restricted ones: absence from that list means
       the family is not offered, which no support ticket will change.
+
+  region-access-visible-only-in-quota:
+    api: Microsoft.Compute/locations/{region}/usages
+    scope: subscription x region
+    use: true
+    reviewed: 2026-09-16
+    note: >
+      The ONLY signal that a subscription has no access to a region. Usages
+      answers HTTP 400 NoRegisteredProviderFound for such a region -- at every
+      API version, so it is easy to misread as a stale api-version or an
+      unregistered provider. It is neither; it is the access answer.
+
+      Microsoft.Compute/skus cannot detect this and actively misleads. For
+      Germany North, a region this subscription cannot deploy to, the SKU API
+      returned 866 VM SKUs of which 796 carried NO RESTRICTION AT ALL. Anything
+      keying on SKU restrictions alone would report the region as wide open.
+
+      Remediation is a region access request, and no quota action of any kind
+      substitutes for it.

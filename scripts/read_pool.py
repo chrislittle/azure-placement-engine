@@ -36,6 +36,15 @@ CLASS_OVERRIDES = [
 REGIONAL_TOTALS = {"cores", "lowprioritycores", "virtualmachines", "virtualmachinescalesets"}
 
 
+class RegionNotAccessible(Exception):
+    """The subscription has no access to the region.
+
+    Compute usages answers NoRegisteredProviderFound for a region the
+    subscription has not been granted, at every API version. It is an access
+    answer wearing a provider-registration error's clothes.
+    """
+
+
 def _az(url: str) -> str:
     # On Windows `az` is az.cmd, which CreateProcess will not resolve from a
     # bare name.
@@ -44,8 +53,12 @@ def _az(url: str) -> str:
         sys.exit("az CLI not found on PATH")
     out = subprocess.run(
         [az, "rest", "--method", "get", "--url", url, "-o", "json"],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True,
     )
+    if out.returncode != 0:
+        if "NoRegisteredProviderFound" in out.stderr:
+            raise RegionNotAccessible(url)
+        raise RuntimeError(out.stderr.strip()[:400])
     return out.stdout
 
 
@@ -173,7 +186,15 @@ def project_skus(payload: dict) -> dict:
 
 if __name__ == "__main__":
     sub, region = sys.argv[1], sys.argv[2]
-    pool = project(read(sub, region))
+    try:
+        pool = project(read(sub, region))
+        accessible = True
+    except RegionNotAccessible:
+        # Emit a well-formed answer rather than crashing: "no access" is a real
+        # result, and the module has to be able to say so.
+        pool = {"regional_cores_limit": 0, "regional_cores_used": 0, "families": {}}
+        accessible = False
+    pool["region_accessible"] = accessible
 
     # Annotate rather than filter: a growth-restricted family is still usable by
     # an EXISTING subscription within quota it already holds. Only the module
@@ -183,7 +204,11 @@ if __name__ == "__main__":
         if name in restricted:
             entry["lifecycle"] = "growth_restricted"
 
-    sku_access, classes = project_skus(read_skus(sub, region))
+    # Deliberately still read the SKUs. They are useless for detecting the
+    # access gap -- 796 of 866 VM SKUs in Germany North report no restriction at
+    # all for a subscription that cannot deploy there -- but the projection is
+    # what proves that, and callers may want it anyway.
+    sku_access, classes = ({}, {}) if not accessible else project_skus(read_skus(sub, region))
 
     # Workload class is a property of the family, so it belongs on the pool
     # entry the module ranks -- not on the access data.

@@ -56,6 +56,21 @@ and the H family scatters across all three bands. See
 It also keeps the read cheap. Projecting 1420 SKUs per region in HCL is the
 expensive part; a class reduces that to a handful of families.
 
+## Region access is the outermost gate
+
+A subscription can be denied a whole region. Only the **quota read** reveals it:
+`Microsoft.Compute/locations/{region}/usages` answers `NoRegisteredProviderFound`,
+at every API version, which reads like a stale api-version and is not.
+
+`Microsoft.Compute/skus` cannot see it and actively misleads. For Germany North,
+which this subscription cannot deploy to, the SKU API returned **866 VM SKUs of
+which 796 carried no restriction at all**. Anything keying on SKU restrictions
+would call the region wide open.
+
+So `pool.region_accessible = false` short-circuits everything — no lifecycle,
+access or quota reasoning, and no writes. The remediation is a region access
+request, and no quota action substitutes for it.
+
 ## Two gates, not one
 
 Quota and access fail independently and have different remedies. A quota group
