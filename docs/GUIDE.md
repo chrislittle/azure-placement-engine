@@ -82,7 +82,7 @@ outputs it. The vending module needs no changes.
 
 | Path | Needs |
 |---|---|
-| Terraform | Terraform >= 1.6 (for `terraform test`), `Azure/azapi` provider >= 2.0 |
+| Terraform | Terraform >= 1.9 (CI gates on 1.9.8), `Azure/azapi` provider >= 2.0 |
 | Bicep | PowerShell 7+, `Az.Accounts`, `powershell-yaml`, Bicep CLI |
 
 ### Permissions
