@@ -28,31 +28,20 @@ Everything else belongs to the platform team: the form, the automation behind
 it, both YAML files, and the pipelines.
 
 ```mermaid
-flowchart TB
-    subgraph APP["APPLICATION TEAM"]
-        F["Fills in the intake form<br/><i>ITSM ticket, Power App, web form</i>"]
-        DEP["Later: deploys the workload<br/>into the family AQV chose"]
-    end
+flowchart LR
+    F["<b>Intake form</b><br/>application team"]
+    RP["<b>Request pipeline</b><br/>generates the request file"]
+    PR["<b>Pull request</b><br/>platform team reviews"]
+    S1["<b>Stage 1</b><br/>sub-vending"]
+    S2["<b>Stage 2 — AQV</b><br/>read → decide → apply"]
+    DEP["<b>Deploy</b><br/>application team"]
 
-    subgraph PLATREPO["PLATFORM TEAM · source control"]
-        RP["<b>Request pipeline</b><br/>turns the form into a file<br/>opens a pull request"]
-        RY["<code>requests/payments-api.yaml</code><br/><i>generated, one per subscription</i>"]
-        RU["<code>platform/rules.yaml</code><br/><i>hand-written, one per platform</i>"]
-        REV["Pull request review<br/><i>platform team approves</i>"]
-    end
-
-    subgraph PIPE["PLATFORM TEAM · deployment pipeline"]
-        direction LR
-        S1["<b>Stage 1</b><br/>avm-ptn-sub-vending"]
-        S2["<b>Stage 2</b><br/>aqv-read → aqv-decide → aqv-apply"]
-        S1 -->|subscription_id| S2
-    end
-
-    F --> RP --> RY --> REV
-    REV -->|merge triggers| PIPE
-    RU --> PIPE
-    S2 -->|"family name, quota set"| DEP
+    F --> RP --> PR --> S1 --> S2 --> DEP
+    RULES["<b>rules.yaml</b><br/>platform team"] --> S2
 ```
+
+The application team touches the first box and the last one. Everything between
+belongs to the platform team.
 
 ### The boundary
 
@@ -305,15 +294,6 @@ AQV is that script. It runs as a second stage, after the subscription exists.
 disk. It sets the subscription's vCPU quota and reports which VM family the
 application team should deploy into. The application team deploys the workload
 itself, after the handover.
-
-```mermaid
-flowchart LR
-    A[Data collection tool] --> B[Request pipeline]
-    B --> C[Subscription parameter file]
-    C --> D[Stage 1: sub-vending]
-    D -- subscription_id --> E[Stage 2: AQV]
-    E --> F[Application team]
-```
 
 Stage 1 creates and configures the subscription. Stage 2 gives it quota.
 

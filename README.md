@@ -63,20 +63,14 @@ script to handle any errors."*
 
 ```mermaid
 flowchart LR
-    C[("Subscription<br/>parameter file")] --> S1
-    subgraph S1 ["STAGE 1 — vending"]
-        D["avm-ptn-sub-vending"]
-    end
-    S1 -- "subscription_id" --> S2
-    subgraph S2 ["STAGE 2 — AQV"]
-        direction LR
-        E["aqv-read"] --> F["aqv-decide"] --> G["aqv-apply"]
-    end
-    S2 --> H["application team"]
+    R["<b>Request file</b><br/>one per subscription"]
+    S1["<b>Stage 1</b><br/>sub-vending"]
+    RD["aqv-read"]
+    DC["aqv-decide"]
+    AP["aqv-apply"]
+    APP["<b>Application team</b><br/>deploys the workload"]
 
-    style S1 fill:#eef4fb,stroke:#5b8db8
-    style S2 fill:#eefbf2,stroke:#4a9d6a
-    style C fill:#fdf6e3,stroke:#b58900
+    R --> S1 -->|subscription_id| RD --> DC --> AP -->|"family name, quota set"| APP
 ```
 
 Two paths, one set of answers:
