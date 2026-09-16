@@ -1,11 +1,10 @@
 {
-  "description": "Existing quota covers the request, so nothing is written.",
+  "description": "With no category filter the roomiest eligible family wins. standardDSv3Family has more unused but is growth-restricted, so a new subscription cannot use it.",
   "request": {
     "region": "eastus",
-    "vcpus": 8,
-    "category": "GeneralPurpose"
+    "vcpus": 8
   },
-  "pool": {
+  "quota": {
     "regional_cores_limit": 500,
     "regional_cores_used": 0,
     "families": {

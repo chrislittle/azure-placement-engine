@@ -1,10 +1,11 @@
 {
-  "description": "With no category filter the roomiest eligible family wins. standardDSv3Family has more headroom but is growth-restricted, so a new subscription cannot use it.",
+  "description": "Existing quota covers the request, so nothing is written.",
   "request": {
     "region": "eastus",
-    "vcpus": 8
+    "vcpus": 8,
+    "category": "GeneralPurpose"
   },
-  "pool": {
+  "quota": {
     "regional_cores_limit": 500,
     "regional_cores_used": 0,
     "families": {

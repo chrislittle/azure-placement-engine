@@ -25,7 +25,7 @@ module "placement" {
     category = "MemoryOptimized"
   }
 
-  pool       = module.read.pool
+  quota       = module.read.quota
   sku_access = module.read.sku_access
   rules      = var.placement_rules
 }
@@ -36,7 +36,7 @@ module "placement" {
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `request` | object | **required** | What the workload needs. See below. |
-| `pool` | object | **required** | Quota state for the region. From `ape-read`. |
+| `quota` | object | **required** | Quota state for the region. From `ape-read`. |
 | `sku_access` | map | `{}` | Deployable sizes and zones. Empty skips the access check. |
 | `rules` | list(object) | `[]` | Platform business rules. |
 
@@ -61,7 +61,7 @@ module "placement" {
 Three fields narrow the candidates. The most specific wins: `family`, then
 `family_allowlist`, then `category` and the attribute fields.
 
-### `pool`
+### `quota`
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -77,7 +77,7 @@ Each family entry:
 |---|---|---|---|
 | `limit` | number | **required** | Current quota limit. |
 | `used` | number | **required** | vCPUs in use. |
-| `available` | number | `null` | Spare quota in a quota group. `null` means no pool. |
+| `available` | number | `null` | Spare quota in a quota group. `null` means no group. |
 | `category` | string | `null` | Azure vmCategory. |
 | `lifecycle` | string | `current` | `current`, `previous_gen`, `capacity_limited`, `growth_restricted`, `retirement_announced` |
 | `successors` | list(string) | `[]` | Replacement families, named in the reason. |
@@ -97,7 +97,7 @@ with no `environments` matches every request, so place it last.
 | `family_allowlist` | list(string) | Limits candidates to this list. |
 | `family_denylist` | list(string) | Removes these candidates. |
 | `max_vcpus` | number | Larger requests give `blocked_by_rule`. |
-| `prefer` | string | `most_headroom` (default), `least_headroom`, `listed_order`. |
+| `prefer` | string | `most_unused` (default), `least_unused`, `listed_order`. |
 
 `listed_order` uses the order of the rule's own `family_allowlist`.
 
@@ -117,12 +117,12 @@ with no `environments` matches every request, so place it last.
 | `family` | The chosen family, or `null`. |
 | `category` | The requested category, or `null`. |
 | `target_limit` | The absolute limit to set, or `null`. |
-| `regional` | The region-wide cap, its headroom, and whether it must be raised. |
+| `regional` | The region-wide cap, its unused vCPUs, and whether it must be raised. |
 | `lifecycle` | Families refused by the growth restrictions, and their successors. |
 | `access` | Region and zone access, and the remediation for a refusal. |
 | `considered` | Each candidate, its numbers, and why it lost. |
 | `rule_applied` | The rule used, or `(none)`. |
-| `unknown_families` | Named families the pool does not contain. |
+| `unknown_families` | Named families that are absent from `quota.families`. |
 
 ### `status`
 
@@ -146,7 +146,7 @@ with no `environments` matches every request, so place it last.
 limits. It is usually much smaller. A subscription can report a cap of 10 vCPUs
 and 97 families that each report 10 to 12.
 
-Ranking on family headroom alone therefore finds vCPUs that cannot be deployed.
+Ranking on unused family quota alone therefore finds vCPUs that cannot be deployed.
 Every decision respects the cap. When the cap binds, `writes_required` raises it
 first, because a family limit above the cap cannot be used.
 

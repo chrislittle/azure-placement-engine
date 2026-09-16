@@ -58,7 +58,7 @@ locals {
   region_accessible = local.provider_registered && local.region_granted
 }
 
-# Both reads are gated on access, so an unreachable region yields an empty pool
+# Both reads are gated on access, so an unreachable region yields an empty quota
 # and a clean `region_accessible = false` rather than a failed plan.
 data "azapi_resource_action" "usages" {
   count                  = local.region_accessible ? 1 : 0

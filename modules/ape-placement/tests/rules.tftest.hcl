@@ -1,5 +1,5 @@
 variables {
-  pool = {
+  quota = {
     regional_cores_limit = 500
     regional_cores_used  = 0
     families = {
@@ -63,7 +63,7 @@ run "rule_denylist_removes_a_family" {
 }
 
 # listed_order exists so a platform team can express "use up the cheap family
-# first", which headroom ranking would get backwards.
+# first", which unused ranking would get backwards.
 run "listed_order_beats_headroom_ranking" {
   command = plan
 
@@ -87,8 +87,8 @@ run "first_matching_rule_wins" {
   variables {
     request = { region = "eastus", vcpus = 8, environment = "prod" }
     rules = [
-      { name = "catch-all first, shadowing everything below", prefer = "least_headroom" },
-      { name = "never reached", environments = ["prod"], prefer = "most_headroom" },
+      { name = "catch-all first, shadowing everything below", prefer = "least_unused" },
+      { name = "never reached", environments = ["prod"], prefer = "most_unused" },
     ]
   }
 
@@ -98,7 +98,7 @@ run "first_matching_rule_wins" {
   }
   assert {
     condition     = output.decision.family == "standardDSv5Family"
-    error_message = "least_headroom should pick the 40-vCPU family"
+    error_message = "least_unused should pick the 40-vCPU family"
   }
 }
 

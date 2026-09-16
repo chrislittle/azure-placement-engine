@@ -6,9 +6,9 @@
 #
 #   terraform apply \
 #     -var subscription_id="$(terraform -chdir=../stage-1 output -raw subscription_id)" \
-#     -var intake_file=intake.example.yaml
+#     -var request_file=request.example.yaml
 #
-# The two stages share the intake file and nothing else. `subscription_id` is
+# The two stages share the subscription request file and nothing else. `subscription_id` is
 # the entire handoff contract.
 
 terraform {
@@ -29,10 +29,10 @@ variable "subscription_id" {
   type        = string
 }
 
-variable "intake_file" {
-  description = "The vending request both stages read."
+variable "request_file" {
+  description = "The subscription request both stages read."
   type        = string
-  default     = "intake.example.yaml"
+  default     = "request.example.yaml"
 }
 
 variable "apply_writes" {
@@ -42,8 +42,8 @@ variable "apply_writes" {
 }
 
 locals {
-  intake  = yamldecode(file("${path.module}/${var.intake_file}"))
-  compute = local.intake.compute
+request_doc= yamldecode(file("${path.module}/${var.request_file}"))
+  compute = local.request_doc.compute
 
   request = {
     region                 = local.compute.region
@@ -56,8 +56,8 @@ locals {
     family_allowlist       = try(local.compute.family_allowlist, null)
     placement              = try(local.compute.placement, {})
 
-    # DevTest and prod land on different rules; the intake already says which.
-    environment = local.intake.subscription.environment
+    # DevTest and prod land on different rules; the subscription request already says which.
+    environment = local.request_doc.subscription.environment
 
     # A vended subscription is by definition new, and new subscriptions cannot
     # deploy growth-restricted series at all.
@@ -76,7 +76,7 @@ module "placement" {
   source = "../../modules/ape-placement"
 
   request    = local.request
-  pool       = module.read.pool
+  quota       = module.read.quota
   sku_access = module.read.sku_access
 
   # Business rules the platform team owns, not the customer. First match wins.

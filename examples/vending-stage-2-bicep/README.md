@@ -9,7 +9,7 @@ pwsh -File Invoke-ApeVending.ps1 -SubscriptionId <from stage 1> -Deploy
 ```
 
 Writes are off by default, so the decision can be reviewed before anything is
-written. It reads the **same intake file** as the Terraform path.
+written. It reads the **same request file** as the Terraform path.
 
 ## Why this is a script and a template, not a module
 

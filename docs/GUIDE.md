@@ -5,7 +5,7 @@ in a subscription vending pipeline.
 
 - [Where APE fits](#where-ape-fits)
 - [Prerequisites](#prerequisites)
-- [The intake](#the-intake)
+- [The subscription request](#the-subscription-request)
 - [Quickstart: Terraform](#quickstart-terraform)
 - [Quickstart: Bicep](#quickstart-bicep)
 - [Business rules](#business-rules)
@@ -97,7 +97,7 @@ locally, or OIDC federated credentials in CI. Nothing stores credentials.
 
 ---
 
-## The intake
+## The subscription request
 
 One YAML file for each request. Both stages read it. APE reads only the
 `compute:` block.
@@ -161,7 +161,7 @@ compute:
     zone_count: 3
 ```
 
-[`examples/vending-stage-2/intake.example.yaml`](../examples/vending-stage-2/intake.example.yaml)
+[`examples/vending-stage-2/request.example.yaml`](../examples/vending-stage-2/request.example.yaml)
 shows the `compute:` block inside a complete parameter file.
 
 ---
@@ -194,7 +194,7 @@ module "read" {
 module "placement" {
   source     = "../../modules/ape-placement"
   request    = local.request
-  pool       = module.read.pool
+  quota       = module.read.quota
   sku_access = module.read.sku_access
   rules      = var.placement_rules
 }
@@ -251,7 +251,7 @@ Import-Module ./powershell/ApeRead.psm1
 Import-Module ./powershell/ApePlacement.psm1
 
 $state = Get-ApeState -SubscriptionId $sub -Region eastus
-$decision = Get-ApePlacement -Request $request -Pool $state.pool `
+$decision = Get-ApePlacement -Request $request -Quota $state.quota `
     -SkuAccess $state.sku_access -Rules $rules
 ```
 
@@ -260,7 +260,7 @@ $decision = Get-ApePlacement -Request $request -Pool $state.pool `
 ## Business rules
 
 Rules belong to the platform team, not to the requester. They are set in the
-module call, not in the intake.
+module call, not in the subscription request.
 
 APE evaluates rules in order and uses the first one whose `environments`
 matches. A rule with no `environments` matches every request, so put it last.
@@ -288,7 +288,7 @@ rules = [
 | `family_allowlist` | Only these families are candidates |
 | `family_denylist` | These families are removed |
 | `max_vcpus` | Requests above this are refused with `blocked_by_rule` |
-| `prefer` | `most_headroom` (default), `least_headroom`, or `listed_order` |
+| `prefer` | `most_unused` (default), `least_unused`, or `listed_order` |
 
 `listed_order` means the order the rule's own allowlist names them — how a
 platform team says "use up the cheap family first".
@@ -390,7 +390,7 @@ Stage 2 needs one value from stage 1. In a single pipeline:
     uses: ./.github/workflows/vend-stage-2-terraform.yml
     with:
       subscription_id: ${{ needs.stage-1-vending.outputs.subscription_id }}
-      intake_file: requests/contoso-payments-api.yaml
+      request_file: requests/contoso-payments-api.yaml
       apply_writes: true
 ```
 

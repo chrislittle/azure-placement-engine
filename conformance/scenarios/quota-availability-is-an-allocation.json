@@ -1,17 +1,18 @@
 {
-  "description": "Without a pool, 20 vCPUs of limit cannot reach 60 and nothing is assumed.",
+  "description": "A quota with spare capacity makes this self-service rather than an increase request.",
   "request": {
     "region": "eastus",
     "vcpus": 60,
     "family": "standardEdsv6Family"
   },
-  "pool": {
+  "quota": {
     "regional_cores_limit": 500,
     "regional_cores_used": 0,
     "families": {
       "standardEdsv6Family": {
         "limit": 20,
         "used": 0,
+        "available": 100,
         "category": "MemoryOptimized"
       }
     }
@@ -19,7 +20,8 @@
   "sku_access": {},
   "rules": [],
   "expect": {
-    "status": "infeasible",
-    "writes_required": 0
+    "status": "needs_allocation",
+    "target_limit": 60,
+    "writes_required": 1
   }
 }

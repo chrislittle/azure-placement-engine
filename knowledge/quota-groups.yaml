@@ -50,12 +50,12 @@ limit_semantics: absolute
 
 # A new group starts at zero and stays there until deliberately filled.
 filling_the_group:
-  harvest:
+  transfer_in:
     what: Deallocate unused quota from existing subscriptions into the group.
     approval: none -- self-service
     note: >
       The underrated path. An estate whose subscriptions sit on unused quota can
-      pool it and redistribute to new vendings without ever contacting Microsoft.
+      quota it and redistribute to new vendings without ever contacting Microsoft.
       For a vending platform this is likely the primary source, not increase requests.
   request:
     what: A group limit increase request.
@@ -102,7 +102,7 @@ mg_deletion_warning: >
   back out to subscriptions, delete the subscriptions, delete the group object,
   then delete the MG.
 
-# Reading state for a rebalance. Two different shapes, both needed.
+# Reading state for a reallocation. Two different shapes, both needed.
 reading_state:
   group_aggregate:
     path: >
@@ -153,10 +153,10 @@ ecosystem:
     networking, role assignments, RP registration, resource groups, managed
     identities, NSGs, route tables and budgets. Quota is simply absent.
 
-# Harvesting idle quota is self-service and is the most useful thing APE can do
+# Transferring idle quota is self-service and is the most useful thing APE can do
 # with this feature. It is also taking cores from a subscription someone else
 # owns, so the authorisation must not come from a usage reading.
-rebalance_note: >
+reallocation_note: >
   Current usage is a point-in-time number. A subscription reading 40 of 500 may
   be a scale set that bursts to 480 nightly, and harvesting to usage-plus-margin
   would break it. Owners should declare a floor they keep; usage informs the

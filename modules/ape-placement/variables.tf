@@ -2,7 +2,7 @@ variable "request" {
   description = <<-EOT
     What the vended subscription needs, in one region. `family` fixes the VM
     family outright; `family_allowlist` narrows the candidates without fixing
-    one; neither means "anything the pool offers".
+    one; neither means "anything the quota offers".
   EOT
 
   type = object({
@@ -92,7 +92,7 @@ variable "sku_access" {
   default = {}
 }
 
-variable "pool" {
+variable "quota" {
   description = <<-EOT
     Current quota state for `request.region`, read by the caller rather than by
     this module.
@@ -102,9 +102,9 @@ variable "pool" {
     regional cap of 10 alongside 97 families each reporting 10 to 12. Every
     family sits underneath it.
 
-    `families[*].available` is what the pool can still grant on top of a
+    `families[*].available` is what the quota can still grant on top of a
     family's own limit, from a quota group's `availableLimit`. Leave it null
-    when there is no pool behind the subscription: the module then treats extra
+    when there is no quota behind the subscription: the module then treats extra
     capacity as unproven rather than assuming a limit increase will be granted.
   EOT
 
@@ -146,10 +146,10 @@ variable "pool" {
 
   validation {
     condition = alltrue([
-      for f in values(var.pool.families) :
+      for f in values(var.quota.families) :
       contains(["current", "previous_gen", "capacity_limited", "growth_restricted", "retirement_announced"], coalesce(f.lifecycle, "current"))
     ])
-    error_message = "pool.families[*].lifecycle must be current, previous_gen, capacity_limited, growth_restricted or retirement_announced."
+    error_message = "quota.families[*].lifecycle must be current, previous_gen, capacity_limited, growth_restricted or retirement_announced."
   }
 }
 
@@ -166,14 +166,14 @@ variable "rules" {
     family_allowlist = optional(list(string))
     family_denylist  = optional(list(string))
     max_vcpus        = optional(number)
-    prefer           = optional(string, "most_headroom")
+    prefer           = optional(string, "most_unused")
   }))
   default = []
 
   validation {
     condition = alltrue([
-      for r in var.rules : contains(["most_headroom", "least_headroom", "listed_order"], coalesce(r.prefer, "most_headroom"))
+      for r in var.rules : contains(["most_unused", "least_unused", "listed_order"], coalesce(r.prefer, "most_unused"))
     ])
-    error_message = "rules[*].prefer must be most_headroom, least_headroom or listed_order."
+    error_message = "rules[*].prefer must be most_unused, least_unused or listed_order."
   }
 }

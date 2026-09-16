@@ -113,7 +113,7 @@ locals {
     )
   }
 
-  pool = {
+  quota = {
     region_accessible    = local.region_accessible
     provider_registered  = local.provider_registered
     regional_cores_limit = try(local.regional_cores.limit, 0)

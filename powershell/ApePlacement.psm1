@@ -78,7 +78,7 @@ function Get-ApePlacement {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] $Request,
-        [Parameter(Mandatory)] $Pool,
+        [Parameter(Mandatory)] $Quota,
         $SkuAccess = @{},
         $Rules = @()
     )
@@ -92,12 +92,12 @@ function Get-ApePlacement {
         throw "request.category must be an Azure vmCategories value; got '$wantedCategory'."
     }
 
-    $families = Get-Prop $Pool 'families' @{}
+    $families = Get-Prop $Quota 'families' @{}
     $familyNames = @(Get-Keys $families)
 
     # --- region gate -----------------------------------------------------
-    $providerRegistered = [bool](Get-Prop $Pool 'provider_registered' $true)
-    $regionAccessible = [bool](Get-Prop $Pool 'region_accessible' $true)
+    $providerRegistered = [bool](Get-Prop $Quota 'provider_registered' $true)
+    $regionAccessible = [bool](Get-Prop $Quota 'region_accessible' $true)
 
     # --- attribute narrowing ---------------------------------------------
     $wantArch = Get-Prop $Request 'architecture'
@@ -133,7 +133,7 @@ function Get-ApePlacement {
         }) | Select-Object -First 1
 
     $ruleName = if ($rule) { Get-Prop $rule 'name' } else { '(none)' }
-    $prefer = if ($rule) { Get-Prop $rule 'prefer' 'most_headroom' } else { 'most_headroom' }
+    $prefer = if ($rule) { Get-Prop $rule 'prefer' 'most_unused' } else { 'most_unused' }
     $ruleCap = if ($rule) { Get-Prop $rule 'max_vcpus' } else { $null }
     $overRuleCap = ($null -ne $ruleCap) -and ($vcpus -gt [int]$ruleCap)
 
@@ -245,8 +245,8 @@ function Get-ApePlacement {
         }).Count -eq 0)
 
     # --- quota arithmetic --------------------------------------------------
-    $regionalLimit = [int](Get-Prop $Pool 'regional_cores_limit' 0)
-    $regionalUsed = [int](Get-Prop $Pool 'regional_cores_used' 0)
+    $regionalLimit = [int](Get-Prop $Quota 'regional_cores_limit' 0)
+    $regionalUsed = [int](Get-Prop $Quota 'regional_cores_used' 0)
     $regionalHeadroom = [Math]::Max(0, $regionalLimit - $regionalUsed)
 
     $reachable = @($accessPermitted | ForEach-Object {
@@ -254,38 +254,38 @@ function Get-ApePlacement {
             $limit = [int](Get-Prop $d 'limit' 0)
             $used = [int](Get-Prop $d 'used' 0)
             $available = Get-Prop $d 'available'
-            $headroom = [Math]::Max(0, $limit - $used)
-            $grantable = if ($null -eq $available) { 0 } else { [Math]::Max(0, [int]$available) }
+            $unused = [Math]::Max(0, $limit - $used)
+            $allocatable = if ($null -eq $available) { 0 } else { [Math]::Max(0, [int]$available) }
             [pscustomobject]@{
                 family         = $_
                 limit          = $limit
                 used           = $used
-                headroom       = $headroom
-                grantable      = $grantable
-                pooled         = $null -ne $available
-                satisfied_now  = $headroom -ge $vcpus
-                satisfied_pool = ($headroom + $grantable) -ge $vcpus
+                unused       = $unused
+                allocatable      = $allocatable
+                has_group_quota         = $null -ne $available
+                satisfied_now  = $unused -ge $vcpus
+                satisfied_with_allocation = ($unused + $allocatable) -ge $vcpus
             }
         })
 
     $eligible = @(if ($overRuleCap) { @() }
         else {
             @($reachable | Where-Object {
-                    $_.satisfied_pool -and (($lifecycleOf[$_.family] -ne 'growth_restricted') -or $_.satisfied_now)
+                    $_.satisfied_with_allocation -and (($lifecycleOf[$_.family] -ne 'growth_restricted') -or $_.satisfied_now)
                 })
         })
 
     # The same padded sort key the Terraform module builds, sorted with an
     # ORDINAL comparer. Sort-Object is case-insensitive and culture-aware, which
     # ordered `StandardDadsv7Family` and `standardDav6Family` differently from
-    # Terraform and picked a different family on a headroom tie.
+    # Terraform and picked a different family on a unused tie.
     if ($prefer -eq 'listed_order') {
         $ranked = @($rulePermitted | Where-Object { $_ -in @($eligible | ForEach-Object family) })
     }
     else {
         [string[]]$keys = @($eligible | ForEach-Object {
-                $h = $_.headroom + $_.grantable
-                '{0:D9}|{1}' -f $(if ($prefer -eq 'most_headroom') { 999999999 - $h } else { $h }), $_.family
+                $h = $_.unused + $_.allocatable
+                '{0:D9}|{1}' -f $(if ($prefer -eq 'most_unused') { 999999999 - $h } else { $h }), $_.family
             })
         if ($keys.Count -gt 0) { [Array]::Sort($keys, [System.StringComparer]::Ordinal) }
         $ranked = @($keys | ForEach-Object { $_.Substring($_.IndexOf('|') + 1) })
@@ -311,7 +311,7 @@ function Get-ApePlacement {
     elseif ($allBlockedByAccess) { 'blocked_by_access' }
     elseif (-not $chosen) { 'infeasible' }
     elseif ($chosenDetail.satisfied_now -and -not $regionalIncreaseRequired) { 'satisfied' }
-    elseif ($chosenDetail.pooled -and -not $regionalIncreaseRequired) { 'needs_allocation' }
+    elseif ($chosenDetail.has_group_quota -and -not $regionalIncreaseRequired) { 'needs_allocation' }
     else { 'needs_increase' }
 
     $wantedDescription = @($wantedCategory, $wantArch,
@@ -340,10 +340,10 @@ function Get-ApePlacement {
         $tail = if ($requestable) { 'requestable via a SKU access request' } else { 'the subscription offer excludes it, which no support ticket will change' }
         "no candidate family has $kind access on this subscription; $tail"
     }
-    elseif ($knownFamilies.Count -eq 0) { 'no candidate family is present in the pool' }
+    elseif ($knownFamilies.Count -eq 0) { 'no candidate family is present in the quota' }
     elseif (-not $chosen) { "no candidate family can reach $vcpus vCPUs" }
     elseif ($status -eq 'satisfied') { 'existing quota covers the request' }
-    elseif ($status -eq 'needs_allocation') { 'the pool can cover the shortfall without a limit increase' }
+    elseif ($status -eq 'needs_allocation') { 'the quota can cover the shortfall without a limit increase' }
     else { 'a quota limit increase is required, and increases are evaluated rather than granted' }
 
     $remediation =
@@ -377,7 +377,7 @@ function Get-ApePlacement {
         regional     = [pscustomobject]@{
             limit             = $regionalLimit
             used              = $regionalUsed
-            headroom          = $regionalHeadroom
+            unused          = $regionalHeadroom
             increase_required = $regionalIncreaseRequired
             target            = if ($regionalIncreaseRequired) { $regionalTarget } else { $regionalLimit }
         }
@@ -413,10 +413,10 @@ function Get-ApePlacement {
                     family    = $_.family
                     limit     = $_.limit
                     used      = $_.used
-                    headroom  = $_.headroom
-                    grantable = $_.grantable
+                    unused  = $_.unused
+                    allocatable = $_.allocatable
                     outcome   = if ($_.family -eq $chosen) { 'chosen' }
-                    elseif (-not $_.satisfied_pool) { "short by $($vcpus - ($_.headroom + $_.grantable)) vCPUs" }
+                    elseif (-not $_.satisfied_with_allocation) { "short by $($vcpus - ($_.unused + $_.allocatable)) vCPUs" }
                     else { 'eligible, outranked' }
                 }
             })

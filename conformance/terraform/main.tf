@@ -24,7 +24,7 @@ module "placement" {
   for_each = local.scenarios
 
   request    = each.value.request
-  pool       = each.value.pool
+  quota      = each.value.quota
   sku_access = each.value.sku_access
   rules      = each.value.rules
 }

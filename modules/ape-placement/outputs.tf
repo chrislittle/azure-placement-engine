@@ -5,7 +5,7 @@ output "decision" {
     `status` is the load-bearing field:
 
       satisfied        existing quota already covers the request; no writes
-      needs_allocation the pool can cover the shortfall; allocation is
+      needs_allocation the quota can cover the shortfall; allocation is
                        self-service and will succeed
       needs_increase   a quota limit increase is required. Increases are
                        evaluated, not granted, and are refused when regional
@@ -40,11 +40,11 @@ output "decision" {
     # The regional vCPU cap is a separate gate from the family limit and has to
     # be raised separately when it binds.
     regional = {
-      limit             = var.pool.regional_cores_limit
-      used              = var.pool.regional_cores_used
-      headroom          = local.regional_headroom
+      limit             = var.quota.regional_cores_limit
+      used              = var.quota.regional_cores_used
+      unused            = local.regional_unused
       increase_required = local.regional_increase_required
-      target            = local.regional_increase_required ? local.regional_target : var.pool.regional_cores_limit
+      target            = local.regional_increase_required ? local.regional_target : var.quota.regional_cores_limit
     }
 
     # The capacity growth restrictions. Not a retirement -- most affected
@@ -99,20 +99,20 @@ output "decision" {
     # cannot say why it rejected the alternatives is not auditable.
     considered = [
       for r in local.reachable : {
-        family    = r.family
-        limit     = r.limit
-        used      = r.used
-        headroom  = r.headroom
-        grantable = r.grantable
+        family      = r.family
+        limit       = r.limit
+        used        = r.used
+        unused      = r.unused
+        allocatable = r.allocatable
         outcome = (
           r.family == local.chosen ? "chosen" :
-          !r.satisfied_pool ? format("short by %d vCPUs", var.request.vcpus - (r.headroom + r.grantable)) :
+          !r.satisfied_with_allocation ? format("short by %d vCPUs", var.request.vcpus - (r.unused + r.allocatable)) :
           "eligible, outranked"
         )
       }
     ]
 
-    # Named but absent from the pool. Usually a typo or a family this
+    # Named but absent from the quota. Usually a typo or a family this
     # subscription has never been offered; either way it is not a silent drop.
     unknown_families = local.unknown_families
   }

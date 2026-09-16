@@ -1,4 +1,4 @@
-# The decision. No resources live here: this module reads a request, the pool
+# The decision. No resources live here: this module reads a request, the quota
 # state its caller fetched, and the platform team's rules, and returns what
 # should happen. Applying it is somebody else's job, which is what makes it
 # testable against fixtures with no subscription.
@@ -12,14 +12,14 @@ locals {
   ]
   rule           = length(local.matching_rules) > 0 ? local.matching_rules[0] : null
   rule_name      = try(local.rule.name, "(none)")
-  prefer         = try(coalesce(local.rule.prefer, "most_headroom"), "most_headroom")
+  prefer         = try(coalesce(local.rule.prefer, "most_unused"), "most_unused")
   rule_allowlist = try(local.rule.family_allowlist, null)
   rule_denylist  = try(local.rule.family_denylist, null)
 
   # The region-wide cap bounds every family beneath it. Ranking on family
-  # headroom alone invents capacity that does not exist, because family limits
+  # unused alone invents capacity that does not exist, because family limits
   # routinely sum to many times the regional cap.
-  regional_headroom = max(0, var.pool.regional_cores_limit - var.pool.regional_cores_used)
+  regional_unused = max(0, var.quota.regional_cores_limit - var.quota.regional_cores_used)
 
   # Candidates, narrowed in order: what the request asked for, then what the
   # rule permits.
@@ -29,8 +29,8 @@ locals {
   # Microsoft.Compute/skus returns a full, unrestricted-looking catalogue: 796
   # of 866 VM SKUs in Germany North report no restriction whatsoever for a
   # subscription that cannot deploy there.
-  region_accessible   = coalesce(try(var.pool.region_accessible, null), true)
-  provider_registered = coalesce(try(var.pool.provider_registered, null), true)
+  region_accessible   = coalesce(try(var.quota.region_accessible, null), true)
+  provider_registered = coalesce(try(var.quota.provider_registered, null), true)
 
   wanted_category = try(var.request.category, null)
 
@@ -40,7 +40,7 @@ locals {
   want_confidential = try(var.request.confidential_computing, null)
 
   attribute_matched = sort([
-    for f, d in var.pool.families : f
+    for f, d in var.quota.families : f
     if(local.wanted_category == null || d.category == local.wanted_category)
     && (local.want_arch == null ? true : contains(try(d.architectures, []), local.want_arch))
     && (local.want_burstable == null || coalesce(d.burstable, false) == (local.want_burstable == "Required"))
@@ -55,10 +55,10 @@ locals {
     var.request.family != null ? [var.request.family] :
     var.request.family_allowlist != null ? var.request.family_allowlist :
     local.filtering_on_attributes ? local.attribute_matched :
-    sort(keys(var.pool.families))
+    sort(keys(var.quota.families))
   )
 
-  # A class that matches nothing is worth saying out loud -- it means the pool
+  # A class that matches nothing is worth saying out loud -- it means the quota
   # holds no quota for that kind of workload in this region, which is a
   # different problem from every candidate being blocked.
   class_unmatched = local.filtering_on_attributes && length(local.attribute_matched) == 0
@@ -66,7 +66,7 @@ locals {
   # Iterate the rule's allowlist rather than filtering by it, so its order
   # survives the intersection. `prefer = "listed_order"` is set on the rule, so
   # "listed" has to mean the order the rule listed -- filtering the other way
-  # round silently substitutes whatever order the pool happened to enumerate in.
+  # round silently substitutes whatever order the quota happened to enumerate in.
   rule_allowed = (
     local.rule_allowlist == null
     ? local.requested_families
@@ -79,10 +79,10 @@ locals {
     : [for f in local.rule_allowed : f if !contains(local.rule_denylist, f)]
   )
 
-  # A family the pool has never heard of cannot be reasoned about. Kept
+  # A family the quota has never heard of cannot be reasoned about. Kept
   # separately so the decision can say so rather than silently dropping it.
-  unknown_families = [for f in local.rule_permitted : f if !contains(keys(var.pool.families), f)]
-  known_families   = [for f in local.rule_permitted : f if contains(keys(var.pool.families), f)]
+  unknown_families = [for f in local.rule_permitted : f if !contains(keys(var.quota.families), f)]
+  known_families   = [for f in local.rule_permitted : f if contains(keys(var.quota.families), f)]
 
   # --- Lifecycle gate ---------------------------------------------------
   #
@@ -94,13 +94,13 @@ locals {
   #   existing, within quota  fine
   #   existing, needs more    refused; this is the 400 DeprecatedQuotaType
   #
-  # So a restricted family can serve a request that fits existing headroom and
+  # So a restricted family can serve a request that fits existing unused and
   # can never serve one that needs an increase. The module already draws that
   # line, so the rule lands exactly on it.
 
   new_subscription = coalesce(try(var.request.new_subscription, null), true)
 
-  lifecycle_of = { for f, d in var.pool.families : f => coalesce(d.lifecycle, "current") }
+  lifecycle_of = { for f, d in var.quota.families : f => coalesce(d.lifecycle, "current") }
 
   frozen_families = [for f, l in local.lifecycle_of : f if l == "growth_restricted"]
 
@@ -224,18 +224,18 @@ locals {
 
   # Per-family arithmetic.
   #
-  #   headroom  -- deployable right now, with no quota change at all
-  #   grantable -- what the pool could add on top. A null `available` means
-  #                there is no pool behind this subscription, so nothing is
+  #   unused  -- deployable right now, with no quota change at all
+  #   allocatable -- what the quota could add on top. A null `available` means
+  #                there is no quota behind this subscription, so nothing is
   #                proven; it is deliberately NOT treated as unlimited.
   assessed = [
     for f in local.access_permitted : {
-      family    = f
-      limit     = var.pool.families[f].limit
-      used      = var.pool.families[f].used
-      headroom  = max(0, var.pool.families[f].limit - var.pool.families[f].used)
-      grantable = var.pool.families[f].available == null ? 0 : max(0, var.pool.families[f].available)
-      pooled    = var.pool.families[f].available != null
+      family          = f
+      limit           = var.quota.families[f].limit
+      used            = var.quota.families[f].used
+      unused          = max(0, var.quota.families[f].limit - var.quota.families[f].used)
+      allocatable     = var.quota.families[f].available == null ? 0 : max(0, var.quota.families[f].available)
+      has_group_quota = var.quota.families[f].available != null
     }
   ]
 
@@ -243,9 +243,9 @@ locals {
   reachable = [
     for a in local.assessed : merge(a, {
       # Quota above the regional cap is unusable, so cap the claim there.
-      reachable_vcpus = min(a.headroom + a.grantable, local.regional_headroom + a.grantable)
-      satisfied_now   = a.headroom >= var.request.vcpus
-      satisfied_pool  = (a.headroom + a.grantable) >= var.request.vcpus
+      reachable_vcpus           = min(a.unused + a.allocatable, local.regional_unused + a.allocatable)
+      satisfied_now             = a.unused >= var.request.vcpus
+      satisfied_with_allocation = (a.unused + a.allocatable) >= var.request.vcpus
     })
   ]
 
@@ -256,20 +256,20 @@ locals {
 
   # A growth-restricted family on an existing subscription is usable only
   # within quota it already has. Quota increases for these are refused, so an
-  # ask that needs one is infeasible on that family however much headroom the
-  # pool reports.
+  # ask that needs one is infeasible on that family however much unused the
+  # quota reports.
   eligible = local.over_rule_cap ? [] : [
     for r in local.reachable : r
-    if r.satisfied_pool && (local.lifecycle_of[r.family] != "growth_restricted" || r.satisfied_now)
+    if r.satisfied_with_allocation && (local.lifecycle_of[r.family] != "growth_restricted" || r.satisfied_now)
   ]
 
   # Ranking. HCL has no sort-by-key, so the sort key is padded into the string
   # and split back off.
   #
-  # The headroom is INVERTED for most_headroom rather than reversing the sorted
+  # The unused is INVERTED for most_unused rather than reversing the sorted
   # list, so the tiebreak stays ascending by family name either way. Reversing
   # the whole list reversed the name order too, which made the result differ
-  # from the PowerShell implementation whenever two families had equal headroom.
+  # from the PowerShell implementation whenever two families had equal unused.
   ranked_keys = (
     local.prefer == "listed_order"
     ? [for f in local.rule_permitted : f if contains([for e in local.eligible : e.family], f)]
@@ -277,7 +277,7 @@ locals {
       for s in sort([
         for e in local.eligible : format(
           "%09d|%s",
-          local.prefer == "most_headroom" ? 999999999 - (e.headroom + e.grantable) : e.headroom + e.grantable,
+          local.prefer == "most_unused" ? 999999999 - (e.unused + e.allocatable) : e.unused + e.allocatable,
           e.family,
         )
       ]) : split("|", s)[1]
@@ -295,10 +295,10 @@ locals {
     local.chosen_detail.used + var.request.vcpus,
   )
 
-  regional_increase_required = var.request.vcpus > local.regional_headroom
+  regional_increase_required = var.request.vcpus > local.regional_unused
   regional_target = max(
-    var.pool.regional_cores_limit,
-    var.pool.regional_cores_used + var.request.vcpus,
+    var.quota.regional_cores_limit,
+    var.quota.regional_cores_used + var.request.vcpus,
   )
 
   # Whether the request can be met without asking Azure for anything new, and
@@ -308,7 +308,7 @@ locals {
   all_blocked_by_lifecycle = length(local.lifecycle_permitted) == 0 && length(local.lifecycle_denied) > 0
 
   suggested_successors = distinct(flatten([
-    for f in local.lifecycle_denied : try(var.pool.families[f].successors, [])
+    for f in local.lifecycle_denied : try(var.quota.families[f].successors, [])
   ]))
 
   all_blocked_by_access = local.access_checked && length(local.access_permitted) == 0 && (length(local.access_denied) > 0 || length(local.not_offered) > 0)
@@ -322,7 +322,7 @@ locals {
     local.all_blocked_by_access ? "blocked_by_access" :
     local.chosen == null ? "infeasible" :
     local.chosen_detail.satisfied_now && !local.regional_increase_required ? "satisfied" :
-    local.chosen_detail.pooled && !local.regional_increase_required ? "needs_allocation" :
+    local.chosen_detail.has_group_quota && !local.regional_increase_required ? "needs_allocation" :
     "needs_increase"
   )
 
@@ -377,10 +377,10 @@ locals {
       local.placement_type == "regional" ? "regional" : "zonal",
       local.requestable ? "requestable via a SKU access request" : "the subscription offer excludes it, which no support ticket will change",
     ) :
-    length(local.known_families) == 0 ? "no candidate family is present in the pool" :
+    length(local.known_families) == 0 ? "no candidate family is present in the quota" :
     local.chosen == null ? format("no candidate family can reach %d vCPUs", var.request.vcpus) :
     local.status == "satisfied" ? "existing quota covers the request" :
-    local.status == "needs_allocation" ? "the pool can cover the shortfall without a limit increase" :
+    local.status == "needs_allocation" ? "the quota can cover the shortfall without a limit increase" :
     "a quota limit increase is required, and increases are evaluated rather than granted"
   )
 }

@@ -31,7 +31,7 @@ places it under `.terraform/modules`, which breaks the relative path.
 
 | Name | Type | Description |
 |---|---|---|
-| `pool` | object | Quota state. Pass to `ape-placement`'s `pool`. |
+| `quota` | object | Quota state. Pass to `ape-placement`'s `quota`. |
 | `sku_access` | map | Deployable SKU sizes and their zones. Pass to `ape-placement`'s `sku_access`. |
 | `region_accessible` | bool | `false` when the subscription cannot use the region. |
 | `provider_registered` | bool | `false` when `Microsoft.Compute` is not registered yet. |
@@ -44,8 +44,8 @@ fails the whole plan.
 
 This module therefore reads the `Microsoft.Compute` provider registration first.
 The registration lists the regions the subscription can use. Both larger reads
-then run only when the region is in that list. An unusable region produces an
-empty pool and `region_accessible = false`.
+then run only when the region is in that list. An unusable region produces no
+families and `region_accessible = false`.
 
 `Microsoft.Compute/skus` cannot detect a missing region grant. It returns a full
 catalogue for regions the subscription cannot use.

@@ -1,9 +1,9 @@
-"""Project live Azure state into the `pool` and `sku_access` inputs ape-placement wants.
+"""Project live Azure state into the `quota` and `sku_access` inputs ape-placement wants.
 
 Two separate reads, because they are two separate gates:
 
-  pool        Microsoft.Compute/locations/{region}/usages -- what quota exists.
-              This is also the fan-out read a rebalance needs per member
+  quota        Microsoft.Compute/locations/{region}/usages -- what quota exists.
+              This is also the fan-out read a reallocation needs per member
               subscription. `available` is deliberately left unset: there is no
               quota group behind a plain subscription, and the module must treat
               that as unproven rather than unlimited.
@@ -82,7 +82,7 @@ def project(payload: dict) -> dict:
             # The usages response mixes vCPU families in with counters that are
             # not families at all -- UltraSSDDiskSizeInGB, availabilitySets,
             # disk counts. Only the vCPU families are placement candidates, and
-            # the others outrank them on headroom if let through.
+            # the others outrank them on unused if let through.
             #
             # Families reporting a limit of zero are omitted: absent is not the
             # same as unavailable, and a zero-limit family is not a candidate.
@@ -208,20 +208,20 @@ def project_skus(payload: dict) -> dict:
 if __name__ == "__main__":
     sub, region = sys.argv[1], sys.argv[2]
     try:
-        pool = project(read(sub, region))
+        quota = project(read(sub, region))
         accessible = True
     except RegionNotAccessible:
         # Emit a well-formed answer rather than crashing: "no access" is a real
         # result, and the module has to be able to say so.
-        pool = {"regional_cores_limit": 0, "regional_cores_used": 0, "families": {}}
+        quota = {"regional_cores_limit": 0, "regional_cores_used": 0, "families": {}}
         accessible = False
-    pool["region_accessible"] = accessible
+    quota["region_accessible"] = accessible
 
     # Annotate rather than filter: a growth-restricted family is still usable by
     # an EXISTING subscription within quota it already holds. Only the module
     # knows whether the target subscription is new.
     restricted = growth_restricted()
-    for name, entry in pool["families"].items():
+    for name, entry in quota["families"].items():
         if name in restricted:
             entry["lifecycle"] = "growth_restricted"
 
@@ -231,11 +231,11 @@ if __name__ == "__main__":
     # what proves that, and callers may want it anyway.
     sku_access, attributes = ({}, {}) if not accessible else project_skus(read_skus(sub, region))
 
-    # Category and attributes belong on the pool entry the module ranks,
+    # Category and attributes belong on the quota entry the module ranks,
     # not on the access data.
-    for name, entry in pool["families"].items():
+    for name, entry in quota["families"].items():
         attrs = attributes.get(name)
         if attrs and attrs["category"]:
             entry.update(attrs)
 
-    print(json.dumps({"pool": pool, "sku_access": sku_access}, indent=2))
+    print(json.dumps({"quota": quota, "sku_access": sku_access}, indent=2))

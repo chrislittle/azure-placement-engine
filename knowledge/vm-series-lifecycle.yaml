@@ -44,14 +44,14 @@ growth_restriction_matrix:
 
 effective: July 2026, with rollout varying by region; some subscriptions saw it earlier.
 
-# Directly relevant to the deferred buffer layer, and it confirms the double
+# Directly relevant to the deferred capacity reservation layer, and it confirms the double
 # quota hold found earlier in quota-groups.yaml is not merely wasteful here,
 # it is fatal.
 odcr_warning: >
   A consuming subscription deploying into a SHARED capacity reservation needs
   its own quota for the series. Because quota increases are refused for these
   series, a vended subscription can be blocked from using reserved capacity that
-  physically exists and is already paid for. The ODCR buffer design cannot serve
+  physically exists and is already paid for. The capacity reservation design cannot serve
   growth-restricted series to new subscriptions, at all.
 
 # Quota family names as the Microsoft.Quota and Compute usages APIs spell them.

@@ -10,7 +10,7 @@
       ]
     }
   },
-  "pool": {
+  "quota": {
     "regional_cores_limit": 500,
     "regional_cores_used": 0,
     "families": {

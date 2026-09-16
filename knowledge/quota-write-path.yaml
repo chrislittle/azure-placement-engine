@@ -114,6 +114,6 @@ vending_integration:
     The module exposes the new subscription's id, which is all APE needs to be
     wired downstream of it. There is NO passthrough for workload metadata or
     requirements, and nothing quota-related anywhere in its inputs -- so the
-    intake that drives placement has to be a sibling input to both modules
+    request that drives placement has to be a sibling input to both modules
     rather than something carried through vending. Simpler than routing it
     through, and it keeps the vending module untouched.

@@ -8,7 +8,7 @@
 # to be the file's own top-level `variables`.
 
 variables {
-  pool = {
+  quota = {
     regional_cores_limit = 500
     regional_cores_used  = 0
     families = {
@@ -67,7 +67,7 @@ run "architecture_filters_to_arm" {
 
   assert {
     condition     = output.decision.family == "standardDpsv6Family"
-    error_message = "only one family in the pool is Arm64"
+    error_message = "only one family in the quota is Arm64"
   }
 }
 
@@ -93,7 +93,7 @@ run "an_unsatisfiable_attribute_combination_says_what_it_wanted" {
 
   assert {
     condition     = output.decision.status == "infeasible"
-    error_message = "no Arm64 memory-optimised family is in this pool"
+    error_message = "no Arm64 memory-optimised family is in this quota"
   }
   assert {
     condition     = strcontains(output.decision.reason, "MemoryOptimized, Arm64")

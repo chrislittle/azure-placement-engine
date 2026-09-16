@@ -2,7 +2,7 @@
 # See knowledge/vm-series-lifecycle.yaml.
 
 variables {
-  pool = {
+  quota = {
     regional_cores_limit = 500
     regional_cores_used  = 0
     families = {
@@ -33,7 +33,7 @@ run "new_subscription_cannot_use_a_restricted_family_even_with_headroom" {
 
   assert {
     condition     = output.decision.status == "blocked_by_lifecycle"
-    error_message = "100 vCPUs of headroom is irrelevant; a new subscription cannot deploy the series"
+    error_message = "100 vCPUs of unused is irrelevant; a new subscription cannot deploy the series"
   }
   assert {
     condition     = strcontains(output.decision.reason, "Dv5, Dv6, Dv7")
@@ -74,7 +74,7 @@ run "existing_subscription_cannot_grow_a_restricted_family" {
       family           = "standardDSv3Family"
       new_subscription = false
     }
-    pool = {
+    quota = {
       regional_cores_limit = 500
       regional_cores_used  = 0
       families = {
@@ -91,7 +91,7 @@ run "existing_subscription_cannot_grow_a_restricted_family" {
 
   assert {
     condition     = output.decision.status == "infeasible"
-    error_message = "quota increases are refused for restricted series, whatever the pool says"
+    error_message = "quota increases are refused for restricted series, whatever the quota says"
   }
   assert {
     condition     = length(output.writes_required) == 0
@@ -108,7 +108,7 @@ run "a_current_family_is_chosen_over_a_restricted_one" {
 
   assert {
     condition     = output.decision.family == "standardDdsv6Family"
-    error_message = "the restricted family has more headroom but is not deployable"
+    error_message = "the restricted family has more unused but is not deployable"
   }
   assert {
     condition     = contains(output.decision.lifecycle.denied, "standardDSv3Family")

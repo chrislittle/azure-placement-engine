@@ -4,7 +4,7 @@
     "region": "eastus",
     "vcpus": 8
   },
-  "pool": {
+  "quota": {
     "region_accessible": false,
     "provider_registered": false,
     "regional_cores_limit": 0,

@@ -4,7 +4,7 @@
 
 Layers quota and capacity decisions onto **Azure subscription vending**.
 
-A vending module builds the subscription as normal. APE then reads the intake
+A vending module builds the subscription as normal. APE then reads the subscription request
 that drove it and sets the subscription up to actually run something: allocating
 vCPU quota, choosing a VM family when the customer has not fixed one, and
 enforcing the platform team's business rules about who gets what.
@@ -68,7 +68,7 @@ published.
 - [x] `ape-placement` — decides. 47 tests, no subscription needed
 - [x] `ape-read` — live quota, SKU availability and region access, all Terraform
 - [x] `ape-apply` — write quota, with the refusal semantics documented
-- [x] `examples/vending-stage-2` — the handoff contract and a sample intake
+- [x] `examples/vending-stage-2` — the handoff contract and a sample request
 - [x] Bicep path — PowerShell read/decide, `ape-apply.bicep` write, 23 shared scenarios
 
 ## Shape
@@ -77,29 +77,29 @@ Three layers, deliberately kept distinct:
 
 | Layer | Azure resource | What it is |
 |---|---|---|
-| **Quota pool** | `Microsoft.Quota/groupQuotas` | The right to ask. Costs nothing, guarantees nothing. Allocating from the group to a subscription is fast; raising the group limit is not. |
-| **Capacity buffer** *(later)* | `Microsoft.Compute/capacityReservationGroups` | Held, guaranteed hardware. Costs money while idle. Declared by the customer, not sized by the tool. |
+| **Quota quota** | `Microsoft.Quota/groupQuotas` | The right to ask. Costs nothing, guarantees nothing. Allocating from the group to a subscription is fast; raising the group limit is not. |
+| **Capacity reservation** *(later)* | `Microsoft.Compute/capacityReservationGroups` | Held, guaranteed hardware. Costs money while idle. Declared by the customer, not sized by the tool. |
 | **Vended subscription** | | The consumer. |
 
-The pool stack owns the allocation table; vending stacks only read it. A
-**rebalance** — harvesting quota that member subscriptions hold but do not use,
-and redistributing it — is not a separate lifecycle, it is what the pool stack
+The quota stack owns the allocation table; vending configurations only read it. A
+**reallocation** — transferring unused quota from member subscriptions,
+and redistributing it — is not a separate lifecycle, it is what the quota stack
 does when applied with updated floors and demands.
 
 The decision module holds **no resources** — inputs to outputs, so it is testable
-with fixtures and no subscription. Reading pool state, deciding, and writing are
+with fixtures and no subscription. Reading quota state, deciding, and writing are
 separate concerns.
 
 ## Scope
 
-**v1 is quota only.** The capacity buffer is a second layer, deferred until the
+**v1 is quota only.** The capacity reservation is a second layer, deferred until the
 first is proven. It depends on a preview feature. A capacity reservation also
 binds to one exact VM size, which does not suit a request that states only a
 category.
 
 The quota backend is swappable. Per-subscription `Microsoft.Quota` works today
 and can be tested on an ordinary subscription. Quota groups change where the
-headroom comes from, not how the decision is made.
+unused comes from, not how the decision is made.
 
 ## Layout
 
@@ -113,7 +113,7 @@ headroom comes from, not how the decision is made.
 | `conformance/` | One set of scenarios both implementations must pass |
 | `docs/GUIDE.md` | The manual |
 | `.github/workflows/` | Conformance, and stage 2 for both paths |
-| `examples/vending-stage-2/` | The stage-2 pattern, with a sample intake |
+| `examples/vending-stage-2/` | The stage-2 pattern, with a sample request |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
 
 ## Known constraints

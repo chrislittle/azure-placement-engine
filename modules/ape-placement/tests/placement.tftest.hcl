@@ -6,7 +6,7 @@ variables {
     region = "eastus"
     vcpus  = 8
   }
-  pool = {
+  quota = {
     regional_cores_limit = 100
     regional_cores_used  = 0
     families = {
@@ -22,7 +22,7 @@ run "existing_quota_covers_the_request" {
 
   assert {
     condition     = output.decision.status == "satisfied"
-    error_message = "40 vCPUs of headroom should cover a request for 8"
+    error_message = "40 vCPUs of unused should cover a request for 8"
   }
   assert {
     condition     = length(output.writes_required) == 0
@@ -30,7 +30,7 @@ run "existing_quota_covers_the_request" {
   }
 }
 
-run "picks_the_family_with_the_most_headroom" {
+run "picks_the_family_with_the_most_unused" {
   command = plan
 
   assert {
@@ -39,14 +39,14 @@ run "picks_the_family_with_the_most_headroom" {
   }
 }
 
-# The finding that matters most. Family headroom says yes; the regional cap
+# The finding that matters most. Family unused says yes; the regional cap
 # says no. Ranking on family numbers alone would invent capacity.
 run "regional_cap_binds_even_when_family_headroom_looks_sufficient" {
   command = plan
 
   variables {
     request = { region = "eastus", vcpus = 150 }
-    pool = {
+    quota = {
       regional_cores_limit = 100
       regional_cores_used  = 0
       families = {
@@ -78,7 +78,7 @@ run "pool_availability_turns_an_increase_into_an_allocation" {
 
   variables {
     request = { region = "eastus", vcpus = 60 }
-    pool = {
+    quota = {
       regional_cores_limit = 500
       regional_cores_used  = 0
       families = {
@@ -89,7 +89,7 @@ run "pool_availability_turns_an_increase_into_an_allocation" {
 
   assert {
     condition     = output.decision.status == "needs_allocation"
-    error_message = "a pool with 100 spare should make this self-service, not an increase request"
+    error_message = "a quota with 100 spare should make this self-service, not an increase request"
   }
   assert {
     condition     = output.decision.target_limit == 60
@@ -97,14 +97,14 @@ run "pool_availability_turns_an_increase_into_an_allocation" {
   }
 }
 
-# A null `available` means no pool behind the subscription. That is unproven
+# A null `available` means no quota behind the subscription. That is unproven
 # capacity, never assumed-unlimited.
 run "absent_pool_is_unproven_not_unlimited" {
   command = plan
 
   variables {
     request = { region = "eastus", vcpus = 60 }
-    pool = {
+    quota = {
       regional_cores_limit = 500
       regional_cores_used  = 0
       families = {
@@ -115,7 +115,7 @@ run "absent_pool_is_unproven_not_unlimited" {
 
   assert {
     condition     = output.decision.status == "infeasible"
-    error_message = "without a pool, 20 vCPUs of limit cannot reach 60"
+    error_message = "without a quota, 20 vCPUs of limit cannot reach 60"
   }
 }
 
@@ -124,7 +124,7 @@ run "target_limit_never_shrinks_an_existing_limit" {
 
   variables {
     request = { region = "eastus", vcpus = 5 }
-    pool = {
+    quota = {
       regional_cores_limit = 500
       regional_cores_used  = 0
       families = {
@@ -171,7 +171,7 @@ run "unknown_family_is_reported_not_dropped" {
 
   assert {
     condition     = contains(output.decision.unknown_families, "standardTypoFamily")
-    error_message = "a family the pool has never heard of must be surfaced"
+    error_message = "a family the quota has never heard of must be surfaced"
   }
   assert {
     condition     = output.decision.family == "standardDSv3Family"

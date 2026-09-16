@@ -35,7 +35,7 @@ what it should produce.
 {
   "description": "why this case exists",
   "request":    { "region": "eastus", "vcpus": 8, "category": "GeneralPurpose" },
-  "pool":       { "...": "..." },
+  "quota":       { "...": "..." },
   "sku_access": {},
   "rules":      [],
   "expect":     { "status": "satisfied", "family": "standardDSv5Family", "writes_required": 0 }
@@ -51,7 +51,7 @@ Writing the PowerShell implementation against these scenarios found three
 defects before release.
 
 **Tie-breaking.** Terraform ranked with `reverse(sort())`. That reverses the
-family name order as well as the headroom order, so a headroom tie selected the
+family name order as well as the unused order, so a unused tie selected the
 last family alphabetically. PowerShell used `Sort-Object`, which ignores case.
 The two implementations chose different families. Both now build the same padded
 sort key and compare it as ordinal text.

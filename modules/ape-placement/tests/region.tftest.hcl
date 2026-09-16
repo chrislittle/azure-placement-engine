@@ -6,7 +6,7 @@ run "no_region_access_blocks_before_anything_else_is_considered" {
 
   variables {
     request = { region = "germanynorth", vcpus = 8 }
-    pool = {
+    quota = {
       region_accessible    = false
       regional_cores_limit = 0
       regional_cores_used  = 0
@@ -38,7 +38,7 @@ run "healthy_looking_sku_data_does_not_override_the_region_gate" {
 
   variables {
     request = { region = "germanynorth", vcpus = 8 }
-    pool = {
+    quota = {
       region_accessible    = false
       regional_cores_limit = 100
       regional_cores_used  = 0
@@ -68,7 +68,7 @@ run "region_accessible_defaults_to_true" {
 
   variables {
     request = { region = "eastus", vcpus = 8 }
-    pool = {
+    quota = {
       regional_cores_limit = 100
       regional_cores_used  = 0
       families = {
@@ -93,7 +93,7 @@ run "an_unregistered_provider_is_transient_not_an_access_gap" {
 
   variables {
     request = { region = "eastus", vcpus = 8 }
-    pool = {
+    quota = {
       provider_registered  = false
       region_accessible    = false
       regional_cores_limit = 0
@@ -121,7 +121,7 @@ run "an_ungranted_region_with_providers_registered_is_still_an_access_gap" {
 
   variables {
     request = { region = "germanynorth", vcpus = 8 }
-    pool = {
+    quota = {
       provider_registered  = true
       region_accessible    = false
       regional_cores_limit = 0

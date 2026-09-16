@@ -1,10 +1,10 @@
 {
-  "description": "Two families with identical headroom. The tiebreak must be ascending ordinal by family name, and must be the same in both implementations -- Terraform's reverse(sort()) and PowerShell's case-insensitive Sort-Object disagreed here.",
+  "description": "Two families with identical unused. The tiebreak must be ascending ordinal by family name, and must be the same in both implementations -- Terraform's reverse(sort()) and PowerShell's case-insensitive Sort-Object disagreed here.",
   "request": {
     "region": "eastus",
     "vcpus": 8
   },
-  "pool": {
+  "quota": {
     "regional_cores_limit": 500,
     "regional_cores_used": 0,
     "families": {

@@ -11,7 +11,7 @@
 #     uses: ./.github/workflows/vend-stage-2-terraform.yml
 #     with:
 #       subscription_id: ${{ needs.stage-1-vending.outputs.subscription_id }}
-#       intake_file: requests/contoso-payments-api.yaml
+#       request_file: requests/contoso-payments-api.yaml
 #       apply_writes: true
 
 name: vend stage 2 (terraform)
@@ -22,9 +22,9 @@ on:
       subscription_id:
         description: From stage 1 — avm-ptn-sub-vending's subscription_id output
         required: true
-      intake_file:
-        description: Subscription parameter file, relative to examples/vending-stage-2
-        default: intake.example.yaml
+      request_file:
+        description: Subscription request file, relative to examples/vending-stage-2
+        default: request.example.yaml
       apply_writes:
         description: Write the quota. Leave false to review the decision first.
         type: boolean
@@ -34,9 +34,9 @@ on:
       subscription_id:
         type: string
         required: true
-      intake_file:
+      request_file:
         type: string
-        default: intake.example.yaml
+        default: request.example.yaml
       apply_writes:
         type: boolean
         default: false
@@ -80,7 +80,7 @@ jobs:
         run: |
           terraform plan -input=false \
             -var subscription_id='${{ inputs.subscription_id }}' \
-            -var intake_file='${{ inputs.intake_file }}' \
+            -var request_file='${{ inputs.request_file }}' \
             -var apply_writes=${{ inputs.apply_writes }} \
             -out tfplan
 

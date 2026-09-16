@@ -1,13 +1,13 @@
-output "pool" {
-  description = "Quota state for the region, shaped for ape-placement's `pool` input."
-  value       = local.pool
+output "quota" {
+  description = "Quota state for the region, shaped for ape-placement's `quota` input."
+  value       = local.quota
 }
 
 output "sku_access" {
   description = <<-EOT
     What this subscription may deploy in the region, shaped for
     ape-placement's `sku_access` input. Empty when the region is inaccessible,
-    which the pool's `region_accessible` reports.
+    which the quota's `region_accessible` reports.
   EOT
   value       = local.sku_access
 }

@@ -4,7 +4,7 @@
     "region": "germanynorth",
     "vcpus": 8
   },
-  "pool": {
+  "quota": {
     "region_accessible": false,
     "provider_registered": true,
     "regional_cores_limit": 0,

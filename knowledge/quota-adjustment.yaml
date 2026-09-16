@@ -52,7 +52,7 @@ providers:
     zonal: self-service
     zonal_dimension: false
     compute_backed: true
-    note: Cluster count is regional; node-pool zonal capacity draws on Compute.
+    note: Cluster count is regional; node-quota zonal capacity draws on Compute.
 
   Microsoft.HDInsight:
     regional: self-service

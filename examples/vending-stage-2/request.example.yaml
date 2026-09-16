@@ -36,7 +36,7 @@ workload:
 subscription:
   display_name: sub-contoso-payments-api-prod-001
   # DevTest carries different terms and lower rates. A billing decision made at
-  # intake, not afterwards.
+  # request, not afterwards.
   environment: prod                     # prod | devtest
   owner: payments-platform@contoso.com
   management_group: corp-online

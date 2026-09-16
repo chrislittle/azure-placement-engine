@@ -52,9 +52,9 @@ terraform apply \
 Writes are **off by default** so the decision can be reviewed first. Add
 `-var apply_writes=true` to let it write quota.
 
-## The intake
+## The subscription request
 
-[`intake.example.yaml`](intake.example.yaml) is a subscription parameter file in
+[`request.example.yaml`](request.example.yaml) is a subscription parameter file in
 the guidance's sense — one per request, produced by the request pipeline. Fields
 above `compute:` belong to stage 1 and APE ignores them; `compute:` is what APE
 adds.
@@ -71,12 +71,12 @@ compute:
     zone_count: 3
 ```
 
-Business rules stay in the module call, not the intake — they belong to the
+Business rules stay in the module call, not the subscription request — they belong to the
 platform team, not the requester.
 
 ## What a decision looks like
 
-Running the sample intake against a PayAsYouGo subscription with a regional cap
+Running the sample request against a PayAsYouGo subscription with a regional cap
 of 10 vCPUs:
 
 ```

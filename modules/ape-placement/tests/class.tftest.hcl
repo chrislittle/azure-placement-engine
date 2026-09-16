@@ -1,8 +1,8 @@
-# Workload class is the intake a customer can actually fill in.
+# Category is the request field a customer can actually fill in.
 # See knowledge/vm-series-classes.yaml.
 
 variables {
-  pool = {
+  quota = {
     regional_cores_limit = 500
     regional_cores_used  = 0
     families = {
@@ -68,7 +68,7 @@ run "a_class_with_no_quota_says_so_plainly" {
 
   assert {
     condition     = output.decision.status == "infeasible"
-    error_message = "no HPC quota exists in this pool"
+    error_message = "no HPC quota exists in this quota"
   }
   assert {
     condition     = strcontains(output.decision.reason, "matching HighPerformanceCompute")

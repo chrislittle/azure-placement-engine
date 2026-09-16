@@ -1,11 +1,11 @@
 {
-  "description": "Only one family in the pool is Arm64.",
+  "description": "Only one family in the quota is Arm64.",
   "request": {
     "region": "eastus",
     "vcpus": 8,
     "architecture": "Arm64"
   },
-  "pool": {
+  "quota": {
     "regional_cores_limit": 500,
     "regional_cores_used": 0,
     "families": {

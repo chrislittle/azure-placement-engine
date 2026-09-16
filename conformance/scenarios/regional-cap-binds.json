@@ -1,12 +1,12 @@
 {
-  "description": "Family headroom says yes and the regional cap says no; the cap is written first.",
+  "description": "Family unused says yes and the regional cap says no; the cap is written first.",
   "request": {
     "region": "eastus",
     "vcpus": 150,
     "family": "standardDSv3Family",
     "new_subscription": false
   },
-  "pool": {
+  "quota": {
     "regional_cores_limit": 100,
     "regional_cores_used": 0,
     "families": {

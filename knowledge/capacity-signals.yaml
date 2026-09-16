@@ -37,7 +37,7 @@ signals:
     scope: subscription x region, SPOT POOL ONLY
     use: spot-tolerant workloads only
     note: >
-      Describes the spot pool, which is a different capacity pool from
+      Describes the spot quota, which is a different capacity quota from
       on-demand. A "High" score has been observed for a SKU in a region where an
       on-demand capacity reservation failed with SkuNotAvailable. Never use it as
       a proxy for on-demand capacity.

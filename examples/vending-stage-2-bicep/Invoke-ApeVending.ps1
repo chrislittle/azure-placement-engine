@@ -24,8 +24,8 @@ param(
     # From stage 1: avm-ptn-sub-vending's `subscription_id` output.
     [Parameter(Mandatory)][string]$SubscriptionId,
 
-    # The vending request both stages read.
-    [string]$IntakeFile = (Join-Path $PSScriptRoot '..' 'vending-stage-2' 'intake.example.yaml'),
+    # The subscription request both stages read.
+    [string]$RequestFile = (Join-Path $PSScriptRoot '..' 'vending-stage-2' 'request.example.yaml'),
 
     [string]$ParamFile = (Join-Path $PSScriptRoot 'ape-apply.bicepparam'),
 
@@ -40,16 +40,16 @@ $repo = Join-Path $PSScriptRoot '..' '..'
 Import-Module (Join-Path $repo 'powershell' 'ApeRead.psm1') -Force
 Import-Module (Join-Path $repo 'powershell' 'ApePlacement.psm1') -Force
 
-# The intake is YAML because that is what the request pipeline produces. Bicep
+# The subscription request is YAML because that is what the request pipeline produces. Bicep
 # cannot read YAML either, which is another reason the decision happens here.
 if (-not (Get-Module -ListAvailable powershell-yaml)) {
-    throw 'The powershell-yaml module is required to read the intake. Install-Module powershell-yaml'
+    throw 'The powershell-yaml module is required to read the subscription request. Install-Module powershell-yaml'
 }
 Import-Module powershell-yaml -Force
-$intake = ConvertFrom-Yaml (Get-Content $IntakeFile -Raw)
-$compute = $intake.compute
+$request_doc = ConvertFrom-Yaml (Get-Content $RequestFile -Raw)
+$compute = $request_doc.compute
 
-# Optional intake fields are genuinely absent rather than null, and StrictMode
+# Optional request fields are genuinely absent rather than null, and StrictMode
 # throws on a missing key, so read them defensively.
 function Opt($map, $key) {
     if ($map -is [System.Collections.IDictionary] -and $map.Contains($key)) { return $map[$key] }
@@ -66,7 +66,7 @@ $request = @{
     family                 = Opt $compute 'family'
     family_allowlist       = Opt $compute 'family_allowlist'
     placement              = Opt $compute 'placement'
-    environment            = $intake.subscription.environment
+    environment            = $request_doc.subscription.environment
 
     # A vended subscription is by definition new, and new subscriptions cannot
     # deploy growth-restricted series at all.
@@ -74,7 +74,7 @@ $request = @{
 }
 
 # Business rules belong to the platform team, not the requester, so they live
-# here rather than in the intake.
+# here rather than in the subscription request.
 $rules = @(
     @{
         name            = 'devtest stays off GPU and stays small'
@@ -87,7 +87,7 @@ $rules = @(
 Write-Host "Reading $($compute.region) for $SubscriptionId ..." -ForegroundColor Cyan
 $state = Get-ApeState -SubscriptionId $SubscriptionId -Region $compute.region -KnowledgeDir (Join-Path $repo 'knowledge')
 
-$decision = Get-ApePlacement -Request $request -Pool $state.pool -SkuAccess $state.sku_access -Rules $rules
+$decision = Get-ApePlacement -Request $request -Quota $state.quota -SkuAccess $state.sku_access -Rules $rules
 
 Write-Host ''
 Write-Host ("  status   : {0}" -f $decision.status)

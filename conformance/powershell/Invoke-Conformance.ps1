@@ -43,7 +43,7 @@ foreach ($file in Get-ChildItem -Path $ScenarioPath -Filter '*.json' | Sort-Obje
     $s = Get-Content $file.FullName -Raw | ConvertFrom-Json
 
     try {
-        $d = Get-ApePlacement -Request $s.request -Pool $s.pool -SkuAccess $s.sku_access -Rules $s.rules
+        $d = Get-ApePlacement -Request $s.request -Quota $s.quota -SkuAccess $s.sku_access -Rules $s.rules
     }
     catch {
         $failed++

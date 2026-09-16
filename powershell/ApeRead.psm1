@@ -65,7 +65,7 @@ function Get-ApeVmCategory {
     <#
         Azure vmCategory for a family. Order matters -- see
         knowledge/vm-series-classes.yaml. Mirrors the same function in
-        scripts/read_pool.py and modules/ape-read/project.tf.
+        scripts/read_quota.py and modules/ape-read/project.tf.
     #>
     param([string]$Family, [double[]]$Ratios, [bool]$HasGpu, [bool]$HasRdma)
 
@@ -84,10 +84,10 @@ function Get-ApeVmCategory {
     return 'MemoryOptimized'
 }
 
-function Get-ApePool {
+function Get-ApeQuota {
     <#
         .SYNOPSIS
-        Quota state for a region, shaped for Get-ApePlacement's -Pool.
+        Quota state for a region, shaped for Get-ApePlacement's -Quota.
 
         .DESCRIPTION
         Families reporting a limit of zero are omitted: absent is not the same
@@ -106,14 +106,14 @@ function Get-ApePool {
 
     if (-not $Access) { $Access = Get-ApeRegionAccess -SubscriptionId $SubscriptionId -Region $Region }
 
-    $pool = [ordered]@{
+    $quota = [ordered]@{
         region_accessible    = $Access.region_accessible
         provider_registered  = $Access.provider_registered
         regional_cores_limit = 0
         regional_cores_used  = 0
         families             = [ordered]@{}
     }
-    if (-not $Access.region_accessible) { return [pscustomobject]$pool }
+    if (-not $Access.region_accessible) { return [pscustomobject]$quota }
 
     $usages = Invoke-Arm "/subscriptions/$SubscriptionId/providers/Microsoft.Compute/locations/$Region/usages?api-version=$script:ComputeApi"
     $restricted = Get-ApeGrowthRestricted -KnowledgeDir $KnowledgeDir
@@ -122,11 +122,11 @@ function Get-ApePool {
         $name = $u.name.value
         if (-not $name) { continue }
         if ($name.ToLower() -eq 'cores') {
-            $pool.regional_cores_limit = [int]$u.limit
-            $pool.regional_cores_used = [int]$u.currentValue
+            $quota.regional_cores_limit = [int]$u.limit
+            $quota.regional_cores_used = [int]$u.currentValue
         }
         elseif ($name.ToLower().EndsWith('family') -and [int]$u.limit -gt 0) {
-            $pool.families[$name] = [ordered]@{
+            $quota.families[$name] = [ordered]@{
                 limit     = [int]$u.limit
                 used       = [int]$u.currentValue
                 lifecycle = if ($name -in $restricted) { 'growth_restricted' } else { 'current' }
@@ -134,7 +134,7 @@ function Get-ApePool {
         }
     }
 
-    return [pscustomobject]$pool
+    return [pscustomobject]$quota
 }
 
 function Get-ApeGrowthRestricted {
@@ -243,26 +243,26 @@ function Get-ApeState {
     )
 
     $access = Get-ApeRegionAccess -SubscriptionId $SubscriptionId -Region $Region
-    $pool = Get-ApePool -SubscriptionId $SubscriptionId -Region $Region -KnowledgeDir $KnowledgeDir -Access $access
+    $quota = Get-ApeQuota -SubscriptionId $SubscriptionId -Region $Region -KnowledgeDir $KnowledgeDir -Access $access
 
     if (-not $access.region_accessible) {
-        return [pscustomobject]@{ pool = $pool; sku_access = [pscustomobject]@{} }
+        return [pscustomobject]@{ quota = $quota; sku_access = [pscustomobject]@{} }
     }
 
     $sku = Get-ApeSkuAccess -SubscriptionId $SubscriptionId -Region $Region
 
-    # Category and attributes belong on the pool entry the decision ranks, not
+    # Category and attributes belong on the quota entry the decision ranks, not
     # on the access data.
-    foreach ($f in $pool.families.Keys) {
+    foreach ($f in $quota.families.Keys) {
         $attrs = $sku.attributes.PSObject.Properties[$f]
         if ($attrs -and $attrs.Value.category) {
             foreach ($k in @('category', 'burstable', 'confidential_computing', 'architectures')) {
-                $pool.families[$f][$k] = $attrs.Value.$k
+                $quota.families[$f][$k] = $attrs.Value.$k
             }
         }
     }
 
-    [pscustomobject]@{ pool = $pool; sku_access = $sku.sku_access }
+    [pscustomobject]@{ quota = $quota; sku_access = $sku.sku_access }
 }
 
-Export-ModuleMember -Function Get-ApeState, Get-ApePool, Get-ApeSkuAccess, Get-ApeRegionAccess, Get-ApeVmCategory, Get-ApeGrowthRestricted
+Export-ModuleMember -Function Get-ApeState, Get-ApeQuota, Get-ApeSkuAccess, Get-ApeRegionAccess, Get-ApeVmCategory, Get-ApeGrowthRestricted

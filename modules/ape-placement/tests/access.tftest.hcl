@@ -2,7 +2,7 @@
 # live subscription on 2026-09-16.
 
 variables {
-  pool = {
+  quota = {
     regional_cores_limit = 500
     regional_cores_used  = 0
     families = {
@@ -269,7 +269,7 @@ run "an_offered_family_beats_a_phantom_one_with_more_quota" {
 
   variables {
     request = { region = "eastus", vcpus = 4 }
-    pool = {
+    quota = {
       regional_cores_limit = 500
       regional_cores_used  = 0
       families = {
@@ -306,7 +306,7 @@ run "a_non_zonal_region_is_not_an_access_gap" {
       vcpus     = 4
       placement = { type = "zonal", zones = ["1"] }
     }
-    pool = {
+    quota = {
       regional_cores_limit = 500
       regional_cores_used  = 0
       families             = { standardDSv5Family = { limit = 100, used = 0 } }
@@ -341,7 +341,7 @@ run "regional_placement_in_a_non_zonal_region_is_fine" {
 
   variables {
     request = { region = "westcentralus", vcpus = 4 }
-    pool = {
+    quota = {
       regional_cores_limit = 500
       regional_cores_used  = 0
       families             = { standardDSv5Family = { limit = 100, used = 0 } }
