@@ -1,0 +1,67 @@
+# What Microsoft.Compute/skus actually says about zones, and why the obvious
+# reading of it is wrong.
+#
+# `az vm list-skus` is a lens on this same API, so the CLI and the module see
+# identical data -- the module just reads the API directly.
+reviewed: 2026-09-16
+source: >
+  Microsoft.Compute/skus api-version 2021-07-01, read live against a
+  PayAsYouGo subscription in eastus on 2026-09-16. 1420 VM SKUs.
+confidence: high
+recheck_after: 2027-03-31
+
+# THE TRAP. `locationInfo[].zones` reads like "the zones you can deploy this
+# into". It is not. A separate `restrictions[]` array can remove zones, and the
+# restricted set is NOT constrained to be a subset of the published set -- the
+# same SKU can publish zones 2 and 3 while restricting 1, 2 and 3.
+#
+# Standard_D1 in eastus, verbatim:
+#     locationInfo[].zones            = ["2", "3"]
+#     restrictions[].restrictionInfo.zones = ["1", "2", "3"]
+#     net effect                      = nothing deployable
+effective_zones_rule: >
+  effective = locationInfo[].zones MINUS union(restrictions[type=Zone].restrictionInfo.zones),
+  and empty outright if any restriction has type=Location. Reading
+  locationInfo[].zones alone overstates availability.
+
+# Measured on one live subscription, eastus.
+observed:
+  vm_skus: 1420
+  publish_zones: 1420
+  zones_published_none_usable_after_zone_restrictions: 60
+  zones_published_none_usable_due_to_location_block: 10
+  partially_reduced: 13
+  example_partial: Standard_L*s_v2 publishes [1,2,3], only [1,2] usable
+
+# Same failure mode as SupportedCapacityReservationTypes in
+# capacity-signals.yaml: a field that reads like availability, is not, and
+# overstates in the direction that produces failed deployments.
+related: capacity-signals.yaml
+
+restriction_types:
+  Zone: region is fine, named zones are not
+  Location: the whole region is unavailable for this SKU on this subscription
+
+# Every restriction observed on this subscription was NotAvailableForSubscription,
+# i.e. requestable. QuotaId would mean the offer excludes the SKU and no support
+# ticket will change it. See capacity-signals.yaml.
+reason_codes_observed: [NotAvailableForSubscription]
+
+# Restrictions are per SKU SIZE (Standard_D4s_v3). Quota is per FAMILY
+# (standardDSv3Family). Aggregating restrictions up to the family loses the
+# thing that matters: within one family, some sizes can be usable while others
+# are not. Carry sizes, and answer "which sizes of this family work in which
+# zones" rather than "is this family zone-restricted".
+granularity_warning: >
+  Do not collapse size-level restrictions into a family-level boolean. The
+  family view of standardDFamily reads "zones 2,3 available, zones 1,2,3
+  blocked", which is incoherent until you look at sizes.
+
+# Why this belongs with quota placement rather than with the deferred ODCR
+# layer: quota groups explicitly do not grant regional or zonal access, so
+# allocating quota for a family the subscription cannot deploy produces a
+# guaranteed deploy failure. The access check belongs BEFORE the quota decision.
+placement_note: >
+  This is the entitlement gate, not the capacity gate. ODCR is about guaranteed
+  capacity in a zone you already have access to; this is about whether you have
+  access at all.
