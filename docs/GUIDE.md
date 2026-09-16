@@ -1,18 +1,154 @@
-# AQV: the manual
+# Azure Quota Vending: the manual
 
-How to run the Azure Quota Vending, what its answers mean, and where it sits
-in a subscription vending pipeline.
+How to run it, what its answers mean, and where it fits in a subscription
+vending pipeline.
 
+- [Who does what](#who-does-what)
+- [A complete example](#a-complete-example)
 - [Where AQV fits](#where-aqv-fits)
 - [Prerequisites](#prerequisites)
 - [The subscription request](#the-subscription-request)
 - [Quickstart: Terraform](#quickstart-terraform)
 - [Quickstart: Bicep](#quickstart-bicep)
-- [Business rules](#business-rules)
+- [Business rules — reference](#business-rules-reference)
 - [Reading a decision](#reading-a-decision)
 - [GitHub Actions](#github-actions)
 - [Azure behaviour to know](#azure-behaviour-to-know)
 - [Not covered yet](#not-covered-yet)
+
+---
+
+## Who does what
+
+Three steps, two teams. Each owns different files and needs different rights.
+
+| | Application team | Platform team |
+|---|---|---|
+| **Writes** | `request.yaml`, one per subscription | `rules.yaml`, one per platform |
+| **Runs** | Nothing required. Optionally the read-only query. | Stage 2, from a pipeline. |
+| **Needs** | `Reader`, and only for the optional query. | `Reader` and `Quota Request Operator`. |
+| **Receives** | A subscription with quota, and the family to deploy into. | The decision, and why each family lost. |
+| **Then does** | Deploys the workload. AQV does not. | Hands the subscription over. |
+
+```mermaid
+flowchart TB
+    subgraph L1["STEP 1 · REQUEST"]
+        direction LR
+        A1["<b>Application team</b><br/>writes <code>request.yaml</code><br/>one per subscription"]
+        A2["<b>Platform team</b><br/>writes <code>rules.yaml</code><br/>one per platform"]
+    end
+
+    subgraph L2["STEP 2 · VEND &nbsp;·&nbsp; platform team"]
+        B1["<b>avm-ptn-sub-vending</b><br/>creates the subscription<br/>identity · governance · networking · budgets"]
+    end
+
+    subgraph L3["STEP 3 · QUOTA &nbsp;·&nbsp; platform team &nbsp;·&nbsp; this repository"]
+        direction LR
+        C1["<b>aqv-read</b><br/>quota · SKUs · access<br/><i>Reader</i>"]
+        C2["<b>aqv-decide</b><br/>which family<br/>what limit<br/><i>no Azure access</i>"]
+        C3["<b>aqv-apply</b><br/>writes the quota<br/><i>Quota Request Operator</i>"]
+        C1 --> C2 --> C3
+    end
+
+    subgraph L4["STEP 4 · DEPLOY &nbsp;·&nbsp; application team"]
+        B2["Deploys the workload into the family AQV chose<br/><i>AQV deploys nothing</i>"]
+    end
+
+    L1 -->|"both files"| L2
+    L2 -->|"subscription_id"| L3
+    L3 -->|"family name, quota set"| L4
+```
+
+The two files never mix. A request says what the workload needs. The rules say
+what the platform permits. Neither team edits the other's file.
+
+---
+
+## A complete example
+
+Everything in one place: two files, one command, the answer.
+Both files are in [`examples/vending-stage-2`](../examples/vending-stage-2).
+
+### 1. The application team writes the request
+
+`request.yaml`, one per subscription. Only the `compute:` block matters to AQV;
+the rest is the vending parameter file it lives inside.
+
+```yaml
+subscription:
+  environment: prod            # selects which rule applies
+
+compute:
+  region: eastus
+  vcpus: 64
+  category: MemoryOptimized
+  architecture: x64
+  placement:
+    type: zone_redundant
+    zone_count: 3
+```
+
+### 2. The platform team writes the rules
+
+`rules.yaml`, one per platform. The application team never sees this.
+
+```yaml
+rules:
+  - name: devtest stays off GPU and stays small
+    environments: [devtest]
+    family_denylist: [standardNCSv3Family, standardNVSv4Family]
+    max_vcpus: 32
+
+  - name: production uses approved families, cheapest first
+    environments: [prod]
+    family_allowlist: [standardDsv6Family, standardDdsv6Family, standardEsv6Family]
+    prefer: listed_order
+
+  - name: default            # no environments, so it catches the rest
+    max_vcpus: 128
+```
+
+### 3. The platform team runs stage 2
+
+```bash
+cd examples/vending-stage-2
+terraform init
+terraform apply -var subscription_id=$SUB
+```
+
+Writes are off by default. Add `-var apply_writes=true` to let it set the quota.
+
+### 4. The answer
+
+The request said `environment: prod`, so the second rule applied:
+
+```text
+status      : infeasible
+reason      : no candidate family is present in the quota
+rule applied: production uses approved families, cheapest first
+```
+
+That subscription holds no quota for any family on the production allowlist. The
+rule did its job: it refused rather than silently choosing something the platform
+had not approved.
+
+Change the request to `environment: devtest` and the first rule applies instead:
+
+```text
+status      : blocked_by_rule
+reason      : rule "devtest stays off GPU and stays small" caps requests at 32 vCPUs
+rule applied: devtest stays off GPU and stays small
+```
+
+The request asked for 64 vCPUs. The devtest rule caps it at 32.
+
+Both are real output from a PayAsYouGo subscription. Neither wrote anything.
+
+### What the application team gets
+
+The chosen family, and a subscription with the quota for it. They deploy the
+workload themselves. They can also re-ask at any time with only `Reader`, using
+[`examples/what-can-i-deploy`](../examples/what-can-i-deploy).
 
 ---
 
@@ -262,43 +398,32 @@ $decision = Get-AqvDecision -Request $request -Quota $state.quota `
 
 ---
 
-## Business rules
+## Business rules — reference
 
-Rules belong to the platform team, not to the requester. They are set in the
-module call, not in the subscription request.
+Rules live in `rules.yaml`, owned by the platform team. See
+[A complete example](#a-complete-example) for the file in context.
 
-AQV evaluates rules in order and uses the first one whose `environments`
-matches. A rule with no `environments` matches every request, so put it last.
+Rules are evaluated in order. The first rule whose `environments` matches is the
+one that applies. A rule with no `environments` matches every request, so place
+it last.
 
-```hcl
-rules = [
-  {
-    name            = "devtest stays off GPU and stays small"
-    environments    = ["devtest"]
-    family_denylist = ["standardNCSv3Family", "standardNVSv4Family"]
-    max_vcpus       = 32
-  },
-  {
-    name             = "prod uses approved families, cheapest first"
-    environments     = ["prod"]
-    family_allowlist = ["standardDsv6Family", "standardDdsv6Family"]
-    prefer           = "listed_order"
-  },
-]
-```
+| Field | Type | Effect |
+|---|---|---|
+| `name` | string | Reported as `rule_applied` in the decision. |
+| `environments` | list | Which `subscription.environment` values this rule applies to. Omit to match all. |
+| `family_allowlist` | list | Only these families may be chosen. |
+| `family_denylist` | list | These families are removed. |
+| `max_vcpus` | number | A larger request is refused with `blocked_by_rule`. |
+| `prefer` | string | `most_unused` (default), `least_unused`, or `listed_order`. |
 
-| Field | Effect |
-|---|---|
-| `environments` | Which `subscription.environment` values this rule applies to |
-| `family_allowlist` | Only these families are candidates |
-| `family_denylist` | These families are removed |
-| `max_vcpus` | Requests above this are refused with `blocked_by_rule` |
-| `prefer` | `most_unused` (default), `least_unused`, or `listed_order` |
+`listed_order` walks the rule's own `family_allowlist` in order, so the first
+entry is tried first. That is how a platform team says "use up the cheap family
+before the expensive one". `most_unused` instead picks whichever family has the
+most room.
 
-`listed_order` means the order the rule's own allowlist names them — how a
-platform team says "use up the cheap family first".
-
----
+Rules constrain; they do not grant. A rule cannot make a family available that
+the subscription has no access to, and it cannot raise a quota that Azure
+refuses.
 
 ## Reading a decision
 
@@ -461,3 +586,37 @@ If this repository becomes public, none of the above is needed.
 Stage 2 plans against a subscription that already exists. The plan shows the
 chosen family, the quota to write, and the reason each other family was
 rejected. Review it in the pull request before anything is written.
+
+---
+
+## Azure behaviour to know
+
+[`knowledge/`](../knowledge) records each of these with a date and a source.
+
+| Behaviour | Consequence |
+|---|---|
+| A family can report a quota limit in a region where Azure offers no sizes of it. | Quota alone does not prove a family is usable. AQV also reads the SKU list. |
+| `restrictions[]` can remove zones that `locationInfo[].zones` publishes. The restricted list is not a subset of the published list. | Read both. The published list alone overstates what you can deploy. |
+| A `Zone` restriction blocks zonal deployment only. Regional deployment still works. | A zone refusal is not a region refusal. |
+| Some regions have no availability zones. | No support ticket adds zones to a region. |
+| `Microsoft.Compute/skus` returns a full catalogue for a region the subscription cannot use. | Only the quota read detects a missing region grant. |
+| New subscriptions cannot deploy the 30 growth-restricted series at all. | This is not a limit on growth. It is a block on deployment. |
+| A `202` from a quota PUT means Azure accepted the request for review. | It is not an approval. Poll for the result. |
+| `isQuotaApplicable` can return `true` for a family whose write is then refused. | Do not use it as a pre-check. |
+
+## Not covered yet
+
+**Quota groups.** `Microsoft.Quota/groupQuotas` would let a platform pool quota
+across subscriptions and reallocate it self-service — including harvesting
+The contract is in place: set `quota.families[*].available` and the decision
+returns `needs_allocation` instead of `needs_increase`. Testing it needs an EA,
+MCA-Enterprise or Internal billing account.
+[`knowledge/quota-groups.yaml`](../knowledge/quota-groups.yaml).
+
+**The ODCR capacity buffer.** Deferred deliberately. A capacity reservation
+binds to an exact VM size, which suits a customer who has already fixed on one
+and not the flexible-request case that is most of the value. It also needs quota
+in the *consuming* subscription, which growth restrictions can make
+unobtainable. See [`knowledge/capacity-signals.yaml`](../knowledge/capacity-signals.yaml).
+
+[vending]: https://learn.microsoft.com/en-us/azure/architecture/landing-zones/subscription-vending

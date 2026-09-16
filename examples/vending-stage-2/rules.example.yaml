@@ -1,0 +1,35 @@
+# Business rules. Owned by the PLATFORM TEAM.
+#
+# One file for the platform, not one per request. The application team does not
+# write this and does not see it. It is how the platform constrains what any
+# request is allowed to get.
+#
+# Rules are evaluated in order. The first rule whose `environments` matches the
+# request is the one that applies; the rest are ignored. A rule with no
+# `environments` matches every request, so put it last.
+
+rules:
+  - name: devtest stays off GPU and stays small
+    environments: [devtest]
+    # Removes these families from consideration entirely.
+    family_denylist:
+      - standardNCSv3Family
+      - standardNVSv4Family
+    # A larger request is refused with blocked_by_rule.
+    max_vcpus: 32
+
+  - name: production uses approved families, cheapest first
+    environments: [prod]
+    # Only these families may be chosen, whatever the request asks for.
+    family_allowlist:
+      - standardDsv6Family
+      - standardDdsv6Family
+      - standardEsv6Family
+    # listed_order walks the allowlist above in order, so the first entry is
+    # tried first. The default, most_unused, would pick whichever family has the
+    # most room instead.
+    prefer: listed_order
+
+  # No `environments`, so this catches anything the rules above did not.
+  - name: default
+    max_vcpus: 128

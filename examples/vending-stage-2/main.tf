@@ -35,6 +35,15 @@ variable "request_file" {
   default     = "request.example.yaml"
 }
 
+variable "rules_file" {
+  description = <<-EOT
+    Business rules, owned by the platform team. One file for the platform, not
+    one per request. The application team never edits this.
+  EOT
+  type        = string
+  default     = "rules.example.yaml"
+}
+
 variable "apply_writes" {
   description = "False evaluates the decision without writing quota."
   type        = bool
@@ -42,8 +51,12 @@ variable "apply_writes" {
 }
 
 locals {
+  # Two inputs, two owners. The request comes from the application team, one per
+  # subscription. The rules come from the platform team, one per platform.
   request_doc = yamldecode(file("${path.module}/${var.request_file}"))
-  compute     = local.request_doc.compute
+  rules_doc   = yamldecode(file("${path.module}/${var.rules_file}"))
+
+  compute = local.request_doc.compute
 
   request = {
     region                 = local.compute.region
@@ -72,21 +85,22 @@ module "read" {
   region          = local.compute.region
 }
 
-module "placement" {
+module "decide" {
   source = "../../modules/aqv-decide"
 
   request    = local.request
   quota      = module.read.quota
   sku_access = module.read.sku_access
 
-  # Business rules the platform team owns, not the customer. First match wins.
   rules = [
-    {
-      name            = "devtest stays off GPU and stays small"
-      environments    = ["devtest"]
-      family_denylist = ["standardNCSv3Family", "standardNVSv4Family"]
-      max_vcpus       = 32
-    },
+    for r in try(local.rules_doc.rules, []) : {
+      name             = r.name
+      environments     = try(r.environments, null)
+      family_allowlist = try(r.family_allowlist, null)
+      family_denylist  = try(r.family_denylist, null)
+      max_vcpus        = try(r.max_vcpus, null)
+      prefer           = try(r.prefer, "most_unused")
+    }
   ]
 }
 
@@ -95,10 +109,10 @@ module "apply" {
 
   subscription_id = var.subscription_id
   region          = local.compute.region
-  writes_required = module.placement.writes_required
+  writes_required = module.decide.writes_required
   enabled         = var.apply_writes
 }
 
-output "decision" { value = module.placement.decision }
-output "writes_required" { value = module.placement.writes_required }
+output "decision" { value = module.decide.decision }
+output "writes_required" { value = module.decide.writes_required }
 output "applied" { value = module.apply.applied }
