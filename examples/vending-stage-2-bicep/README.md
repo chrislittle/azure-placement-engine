@@ -23,6 +23,8 @@ So the shape is:
 ```
 PowerShell:  read quota + SKUs  ->  decide  ->  aqv-apply.bicepparam
 Bicep:       aqv-apply.bicep    ->  write the quota
+
+             quota group (the pool)  ->  allocate     NOT BUILT YET
 ```
 
 On the Terraform path all three steps are Terraform. Here only the last one can

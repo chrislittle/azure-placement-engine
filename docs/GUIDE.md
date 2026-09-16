@@ -38,10 +38,18 @@ flowchart LR
 
     F --> RP --> PR --> S1 --> S2 --> DEP
     RULES["<b>rules.yaml</b><br/>platform team"] --> S2
+    QG["<b>Quota group</b><br/>the platform's pool<br/><i>not built yet</i>"] -.->|allocate| S2
+
+    classDef pending stroke-dasharray: 5 5
+    class QG pending
 ```
 
 The application team touches the first box and the last one. Everything between
 belongs to the platform team.
+
+The dashed box is the quota group, the pool stage 2 is meant to allocate from.
+It is **not built yet**, so today stage 2 reports what the subscription can
+already run and writes only the regional cap.
 
 ### The boundary
 
@@ -718,6 +726,10 @@ Stage 1 creates and configures the subscription. Stage 2 gives it quota.
 | 2 | `aqv-decide` | Choose a VM family. Calculate the quota to set. |
 | 2 | `aqv-apply` | Write the quota. |
 
+Gate 4 asks whether a candidate can reach the requested size from the quota it
+already holds, or from a quota group behind it. **The quota group layer is not
+built yet**, so today only the first half of that applies.
+
 Both stages read the same parameter file. Stage 1 gives stage 2 one value: the
 subscription ID.
 
@@ -926,7 +938,7 @@ AQV applies four gates, in this order.
 
 ```mermaid
 flowchart LR
-    A[1. Region] --> B[2. Lifecycle] --> C[3. Access] --> D[4. Quota] --> E[Decision]
+    A[1. Region] --> B[2. Lifecycle] --> C[3. Access] --> D["4. Quota<br/><i>held, or in the pool</i>"] --> E[Decision]
 ```
 
 | Gate | Question | Failure status |

@@ -77,6 +77,7 @@ script to handle any errors."*
 
 ```mermaid
 flowchart LR
+    QG["<b>Quota group</b><br/>the platform's pool<br/><i>not built yet</i>"]
     R["<b>Request file</b><br/>one per subscription"]
     S1["<b>Stage 1</b><br/>sub-vending"]
     RD["aqv-read"]
@@ -85,7 +86,15 @@ flowchart LR
     APP["<b>Application team</b><br/>deploys the workload"]
 
     R --> S1 -->|subscription_id| RD --> DC --> AP -->|"family name, quota set"| APP
+    QG -.->|"allocate<br/>self-service"| AP
+
+    classDef pending stroke-dasharray: 5 5
+    class QG pending
 ```
+
+The dashed box is where the quota is meant to come from and is **not built
+yet**. Today `aqv-apply` writes the regional cap and nothing else. See
+[Where the quota is meant to come from](#where-the-quota-is-meant-to-come-from).
 
 Two paths, one set of answers:
 
