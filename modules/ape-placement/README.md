@@ -4,8 +4,12 @@ Chooses a VM family for a subscription and calculates the quota limit to set.
 Returns the decision, the reason for it, and the reason each other family was
 rejected.
 
-This module contains no resources. It reads nothing from Azure. The caller
-supplies the state, usually from [`ape-read`](../ape-read).
+This module contains no resources. It reads nothing from Azure and deploys
+nothing. The caller supplies the state, usually from
+[`ape-read`](../ape-read).
+
+The chosen family is an answer, not an action. The application team deploys into
+it later.
 
 That separation makes the whole decision testable without a subscription:
 

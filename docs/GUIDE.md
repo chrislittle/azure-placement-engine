@@ -29,6 +29,11 @@ of them. The Cloud Adoption Framework states the problem but does not solve it:
 
 APE is that script. It runs as a second stage, after the subscription exists.
 
+**APE deploys nothing.** It creates no virtual machine, no scale set and no
+disk. It sets the subscription's vCPU quota and reports which VM family the
+application team should deploy into. The application team deploys the workload
+itself, after the handover.
+
 ```mermaid
 flowchart LR
     A[Data collection tool] --> B[Request pipeline]

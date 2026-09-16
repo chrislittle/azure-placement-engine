@@ -12,12 +12,46 @@
 
 *(name is a placeholder)*
 
-Layers quota and capacity decisions onto **Azure subscription vending**.
+Sets the vCPU quota on a newly vended Azure subscription, and tells the
+application team which VM family to use.
 
-A vending module creates the subscription. APE then reads the request that
-created it and gives the subscription what it needs to run a workload: vCPU
-quota, a VM family when the request does not name one, and the platform team's
-rules about who gets what.
+## What it does
+
+A subscription vending module creates a subscription. That subscription arrives
+with Azure's default quota, which is often zero for the family the workload
+needs. APE runs next and does three things:
+
+1. **Reads** the subscription's quota, the VM sizes Azure will let it deploy,
+   and whether it has access to the region and the zones.
+2. **Decides** which VM family fits the request, and what the quota limit must
+   be to run the requested number of vCPUs.
+3. **Writes** that quota limit.
+
+It returns the chosen family, the quota it set, and the reason every other
+family was rejected.
+
+## What it does not do
+
+**APE does not deploy anything.** It creates no virtual machine, no scale set
+and no disk. The application team deploys the workload, in their own pipeline,
+after the subscription is handed over.
+
+APE's output is an input to that: the application team is told which family to
+deploy into, and the subscription already has the quota for it.
+
+## Why
+
+Without this step, the application team finds out at deploy time. The family
+they picked has no quota in that region. Or the subscription was never granted
+the region. Or the series is one of the thirty that new subscriptions can no
+longer deploy at all. Each of those surfaces as a failed deployment, days or
+weeks after the subscription was handed over.
+
+APE moves that discovery to vending time. When the request can be satisfied, it
+sets the quota and names the family. When it cannot, it says which gate failed
+and what would lift it.
+
+## Where it fits
 
 It runs as a **second stage** after vending, taking the new `subscription_id` as
 its only handoff. Microsoft's [subscription vending
@@ -81,35 +115,28 @@ published.
 - [x] `examples/vending-stage-2` — the handoff contract and a sample request
 - [x] Bicep path — PowerShell read/decide, `ape-apply.bicep` write, 23 shared scenarios
 
-## Shape
+## Design
 
-Three layers, deliberately kept distinct:
+The decision module holds **no resources**. It takes state in and returns a
+decision. That is why the whole decision surface is testable with fixtures and
+no subscription, and why the same logic can be implemented twice and held to one
+set of answers.
 
-| Layer | Azure resource | What it is |
+Reading, deciding and writing are three separate modules for the same reason.
+
+### Not built yet
+
+Two layers are designed and recorded in [`knowledge/`](knowledge/), but are not
+implemented. Neither can be exercised on an ordinary subscription.
+
+| Layer | Azure resource | What it would add |
 |---|---|---|
-| **Quota quota** | `Microsoft.Quota/groupQuotas` | The right to ask. Costs nothing, guarantees nothing. Allocating from the group to a subscription is fast; raising the group limit is not. |
-| **Capacity reservation** *(later)* | `Microsoft.Compute/capacityReservationGroups` | Held, guaranteed hardware. Costs money while idle. Declared by the customer, not sized by the tool. |
-| **Vended subscription** | | The consumer. |
+| Quota group | `Microsoft.Quota/groupQuotas` | A platform-wide quota reserve. Allocating from it to a subscription is self-service and fast. Raising the group's own limit is not. Requires an EA, MCA-Enterprise or Internal billing account. |
+| Capacity reservation | `Microsoft.Compute/capacityReservationGroups` | Guaranteed hardware, held in advance. Costs money while idle and binds to one exact VM size. |
 
-The quota stack owns the allocation table; vending configurations only read it. A
-**reallocation** — transferring unused quota from member subscriptions,
-and redistributing it — is not a separate lifecycle, it is what the quota stack
-does when applied with updated floors and demands.
-
-The decision module holds **no resources** — inputs to outputs, so it is testable
-with fixtures and no subscription. Reading quota state, deciding, and writing are
-separate concerns.
-
-## Scope
-
-**v1 is quota only.** The capacity reservation is a second layer, deferred until the
-first is proven. It depends on a preview feature. A capacity reservation also
-binds to one exact VM size, which does not suit a request that states only a
-category.
-
-The quota backend is swappable. Per-subscription `Microsoft.Quota` works today
-and can be tested on an ordinary subscription. Quota groups change where the
-unused comes from, not how the decision is made.
+The contract already anticipates the first. Set `available` on a family and the
+decision returns `needs_allocation` instead of `needs_increase`, because
+allocating from a group succeeds where a quota increase may be refused.
 
 ## Layout
 
