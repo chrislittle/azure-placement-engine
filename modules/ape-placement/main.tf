@@ -48,6 +48,35 @@ locals {
   unknown_families = [for f in local.rule_permitted : f if !contains(keys(var.pool.families), f)]
   known_families   = [for f in local.rule_permitted : f if contains(keys(var.pool.families), f)]
 
+  # --- Lifecycle gate ---------------------------------------------------
+  #
+  # The July 2026 capacity growth restrictions are not a preference and not a
+  # retirement -- they are a hard eligibility rule whose answer differs by
+  # whether the subscription is new:
+  #
+  #   new subscription        cannot deploy a restricted series AT ALL
+  #   existing, within quota  fine
+  #   existing, needs more    refused; this is the 400 DeprecatedQuotaType
+  #
+  # So a restricted family can serve a request that fits existing headroom and
+  # can never serve one that needs an increase. The module already draws that
+  # line, so the rule lands exactly on it.
+
+  new_subscription = coalesce(try(var.request.new_subscription, null), true)
+
+  lifecycle_of = { for f, d in var.pool.families : f => coalesce(d.lifecycle, "current") }
+
+  frozen_families = [for f, l in local.lifecycle_of : f if l == "growth_restricted"]
+
+  # Denied outright: a new subscription cannot touch these at all.
+  lifecycle_denied = !local.new_subscription ? [] : [
+    for f in local.known_families : f if local.lifecycle_of[f] == "growth_restricted"
+  ]
+
+  lifecycle_permitted = [
+    for f in local.known_families : f if !contains(local.lifecycle_denied, f)
+  ]
+
   # --- Access gate -------------------------------------------------------
   #
   # Checked before quota, and kept separate from it. Quota groups explicitly do
@@ -110,20 +139,20 @@ locals {
     for f, sizes in local.size_access : f => distinct(compact([for sz in sizes : sz.reason]))
   }
 
-  access_permitted = !local.access_checked ? local.known_families : [
-    for f in local.known_families : f
+  access_permitted = !local.access_checked ? local.lifecycle_permitted : [
+    for f in local.lifecycle_permitted : f
     if !contains(keys(local.size_access), f) || local.family_deployable[f]
   ]
 
   access_denied = !local.access_checked ? [] : [
-    for f in local.known_families : f
+    for f in local.lifecycle_permitted : f
     if contains(keys(local.size_access), f) && !local.family_deployable[f]
   ]
 
   # Present in the pool, absent from the SKU data. Permitted, but never
   # reported as verified -- silence is not evidence of access.
-  access_unverified = !local.access_checked ? local.known_families : [
-    for f in local.known_families : f if !contains(keys(local.size_access), f)
+  access_unverified = !local.access_checked ? local.lifecycle_permitted : [
+    for f in local.lifecycle_permitted : f if !contains(keys(local.size_access), f)
   ]
 
   # Per-family arithmetic.
@@ -156,7 +185,14 @@ locals {
   rule_cap      = local.rule == null ? null : local.rule.max_vcpus
   over_rule_cap = local.rule_cap != null && var.request.vcpus > local.rule_cap
 
-  eligible = local.over_rule_cap ? [] : [for r in local.reachable : r if r.satisfied_pool]
+  # A growth-restricted family on an existing subscription is usable only
+  # within quota it already has. Quota increases for these are refused, so an
+  # ask that needs one is infeasible on that family however much headroom the
+  # pool reports.
+  eligible = local.over_rule_cap ? [] : [
+    for r in local.reachable : r
+    if r.satisfied_pool && (local.lifecycle_of[r.family] != "growth_restricted" || r.satisfied_now)
+  ]
 
   # Ranking. HCL has no sort-by-key, so pad the sort key into the string and
   # split it back off.
@@ -192,10 +228,17 @@ locals {
   # therefore whether the answer can be relied on. A request needing a limit
   # increase is not a promise: increases are evaluated and can be refused when
   # regional capacity is short.
+  all_blocked_by_lifecycle = length(local.lifecycle_permitted) == 0 && length(local.lifecycle_denied) > 0
+
+  suggested_successors = distinct(flatten([
+    for f in local.lifecycle_denied : coalesce(var.pool.families[f].successors, [])
+  ]))
+
   all_blocked_by_access = local.access_checked && length(local.access_permitted) == 0 && length(local.access_denied) > 0
 
   status = (
     local.over_rule_cap ? "blocked_by_rule" :
+    local.all_blocked_by_lifecycle ? "blocked_by_lifecycle" :
     local.all_blocked_by_access ? "blocked_by_access" :
     local.chosen == null ? "infeasible" :
     local.chosen_detail.satisfied_now && !local.regional_increase_required ? "satisfied" :
@@ -216,6 +259,10 @@ locals {
 
   reason = (
     local.over_rule_cap ? format("rule %q caps requests at %d vCPUs", local.rule_name, local.rule_cap) :
+    local.all_blocked_by_lifecycle ? format(
+      "every candidate family is under the capacity growth restriction, which a new subscription cannot deploy at all%s",
+      length(local.suggested_successors) > 0 ? format("; use %s instead", join(", ", local.suggested_successors)) : "",
+    ) :
     local.all_blocked_by_access ? format(
       "no candidate family has %s access on this subscription; %s",
       local.placement_type == "regional" ? "regional" : "zonal",

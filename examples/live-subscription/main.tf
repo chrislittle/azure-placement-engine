@@ -5,43 +5,19 @@
 #
 # There are no providers and no resources -- apply only evaluates the decision.
 
-variable "pool" {
-  type = object({
-    regional_cores_limit = number
-    regional_cores_used  = number
-    families = map(object({
-      limit     = number
-      used      = number
-      available = optional(number)
-    }))
-  })
-}
+# All three are untyped on purpose. Restating the module's object types here
+# has silently discarded fields three times -- Terraform drops attributes the
+# local type does not declare, without warning. The module declares and
+# validates them; the example must not shadow that.
+variable "pool" { type = any }
 
 variable "sku_access" {
-  type = map(object({
-    sizes = map(object({
-      zones               = optional(list(string), [])
-      restricted_zones    = optional(list(string), [])
-      location_restricted = optional(bool, false)
-      restriction_reason  = optional(string)
-    }))
-  }))
+  type    = any
   default = {}
 }
 
 variable "request" {
-  type = object({
-    region           = string
-    vcpus            = number
-    family           = optional(string)
-    family_allowlist = optional(list(string))
-    environment      = optional(string, "prod")
-    placement = optional(object({
-      type       = optional(string, "regional")
-      zones      = optional(list(string))
-      zone_count = optional(number)
-    }), {})
-  })
+  type = any
 }
 
 module "placement" {
@@ -65,4 +41,5 @@ output "reason" { value = module.placement.decision.reason }
 output "family" { value = module.placement.decision.family }
 output "regional" { value = module.placement.decision.regional }
 output "access" { value = module.placement.decision.access }
+output "lifecycle" { value = module.placement.decision.lifecycle }
 output "writes_required" { value = module.placement.writes_required }

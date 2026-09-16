@@ -15,9 +15,13 @@ Two separate reads, because they are two separate gates:
 """
 
 import json
+import pathlib
+import re
 import shutil
 import subprocess
 import sys
+
+KNOWLEDGE = pathlib.Path(__file__).resolve().parent.parent / "knowledge" / "vm-series-lifecycle.yaml"
 
 REGIONAL_TOTALS = {"cores", "lowprioritycores", "virtualmachines", "virtualmachinescalesets"}
 
@@ -69,6 +73,20 @@ def project(payload: dict) -> dict:
     }
 
 
+def growth_restricted():
+    """Families frozen by the July 2026 capacity growth restrictions.
+
+    Read from knowledge/ rather than duplicated here, so the list has one
+    home. Scanned rather than YAML-parsed to keep this script
+    dependency-free; the block is a flat list of family names and nothing
+    else in it looks like one.
+    """
+    text = KNOWLEDGE.read_text(encoding="utf-8")
+    block = text.split("growth_restricted_families:", 1)[1]
+    block = block.split("unmatched_note:", 1)[0]
+    return set(re.findall(r"\bstandard\w*Family\b", block))
+
+
 def read_skus(subscription: str, region: str) -> dict:
     url = (
         f"https://management.azure.com/subscriptions/{subscription}"
@@ -109,7 +127,17 @@ def project_skus(payload: dict) -> dict:
 
 if __name__ == "__main__":
     sub, region = sys.argv[1], sys.argv[2]
+    pool = project(read(sub, region))
+
+    # Annotate rather than filter: a growth-restricted family is still usable by
+    # an EXISTING subscription within quota it already holds. Only the module
+    # knows whether the target subscription is new.
+    restricted = growth_restricted()
+    for name, entry in pool["families"].items():
+        if name in restricted:
+            entry["lifecycle"] = "growth_restricted"
+
     print(json.dumps({
-        "pool": project(read(sub, region)),
+        "pool": pool,
         "sku_access": project_skus(read_skus(sub, region)),
     }, indent=2))

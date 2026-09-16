@@ -1,0 +1,110 @@
+# VM series lifecycle, and why "can I deploy this?" has five different answers.
+#
+# Two separate Microsoft programmes overlap here and are easy to conflate.
+# Microsoft says so itself: "This restriction is about capacity growth, not
+# retirement. Retirement follows a separate process."
+reviewed: 2026-09-16
+source: >
+  learn.microsoft.com/azure/virtual-machines/migration/sizes/previous-gen-series-capacity-limitations
+  learn.microsoft.com/azure/virtual-machines/sizes/lifecycle/retirement/retirement-overview
+  Family names below verified against live Microsoft.Compute/skus data for eastus, 2026-09-16.
+confidence: high
+recheck_after: 2026-12-31
+
+# The states a series can be in, and what each actually costs you.
+states:
+  current: nothing special.
+  previous_gen_next_gen_available: >
+    Fully supported, no announced timeline, but not guaranteed more capacity.
+    A soft signal, not a block.
+  previous_gen_capacity_limited: >
+    No further capacity will be deployed. A second VM of the same series in the
+    same region may simply not be fulfillable. Deployable, never dependable.
+  growth_restricted: >
+    The July 2026 capacity growth restrictions. Quota is frozen at whatever is
+    already approved. See the matrix below -- this is the one that bites vending.
+  retirement_announced: >
+    A hard date. At it, remaining VMs are DEALLOCATED, stop working, stop
+    billing, and lose SLA and support. Unlike every other state, this one has a
+    deadline attached.
+  retired: gone.
+
+# THE MATRIX THAT MATTERS FOR VENDING. Verbatim from the capacity-restrictions
+# doc, and the first row is the one that reshapes APE's candidate set.
+growth_restriction_matrix:
+  new_subscription: >
+    CANNOT DEPLOY the affected series at all. Not "cannot grow" -- cannot deploy.
+    A vended subscription is a new subscription, so for APE's primary scenario
+    all the series listed below are simply off the table.
+  existing_within_approved_quota: can deploy and redeploy, subject to capacity.
+  existing_requesting_more: not approved. This is the DeprecatedQuotaType 400.
+  existing_with_quota_no_capacity: may still fail allocation. Quota is not capacity.
+  shared_capacity_reservation: >
+    No impact WITHIN approved limits -- but see odcr_warning below.
+
+effective: July 2026, with rollout varying by region; some subscriptions saw it earlier.
+
+# Directly relevant to the deferred buffer layer, and it confirms the double
+# quota hold found earlier in quota-groups.yaml is not merely wasteful here,
+# it is fatal.
+odcr_warning: >
+  A consuming subscription deploying into a SHARED capacity reservation needs
+  its own quota for the series. Because quota increases are refused for these
+  series, a vended subscription can be blocked from using reserved capacity that
+  physically exists and is already paid for. The ODCR buffer design cannot serve
+  growth-restricted series to new subscriptions, at all.
+
+# Quota family names as the Microsoft.Quota and Compute usages APIs spell them.
+# These are what APE keys on, and all 30 were matched against live SKU data.
+growth_restricted_families:
+  compute_optimized: [standardFFamily, standardFSFamily, standardFSv2Family]
+  general_purpose:
+    - standardDFamily
+    - standardDSFamily
+    - standardDv2Family
+    - standardDSv2Family
+    - standardDv3Family
+    - standardDSv3Family
+    - standardDv4Family
+    - standardDSv4Family
+    - standardDDv4Family
+    - standardDDSv4Family
+    - standardDAv4Family
+    - standardDASv4Family
+    - standardBSFamily
+    - standardAv2Family
+  memory_optimized:
+    - standardEv3Family
+    - standardESv3Family
+    - standardEv4Family
+    - standardESv4Family
+    - standardEDv4Family
+    - standardEDSv4Family
+    - standardEAv4Family
+    - standardEASv4Family
+    - standardGFamily
+    - standardGSFamily
+  storage_optimized: [standardLSFamily, standardLSv2Family]
+
+unmatched_note: >
+  The doc also lists B and Amv2. Neither resolved to a family in the eastus SKU
+  data -- B appears only as standardBSFamily there, and Amv2 not at all. Resolve
+  them against a region that offers them before relying on the list being complete.
+
+# From the doc's own migration table. Deliberately coarse: the right target
+# depends on storage and performance requirements, and APE should surface the
+# candidates rather than pick one.
+successors:
+  general_purpose: [Dv5, Dv6, Dv7]
+  memory_optimized: [Ev5, Esv6, Esv7]
+  note: >
+    The 400 DeprecatedQuotaType error also names replacements inline, per
+    quota-write-path.yaml. That error text is the most specific mapping
+    available and is worth parsing when it appears.
+
+# Not retirement. Worth repeating because the API's error code says
+# "DeprecatedQuotaType", which is misleading.
+not_retirement: >
+  D(s)v3, E(s)v3 and D(d)(s)v4, E(d)(s)v4 are growth-restricted but have NO
+  published retirement plan and remain fully supported under SLA. Do not present
+  a growth restriction to a customer as a retirement.

@@ -12,6 +12,11 @@ variable "request" {
     family_allowlist = optional(list(string))
     environment      = optional(string, "prod")
 
+    # A freshly vended subscription is a NEW subscription, and new subscriptions
+    # cannot deploy growth-restricted series at all -- not even within quota.
+    # Default true, because vending is the case this module exists for.
+    new_subscription = optional(bool, true)
+
     # How the workload will be placed. This is not a preference -- it changes
     # which families are eligible at all, because zone access is granted per
     # SKU size and per zone.
@@ -93,8 +98,24 @@ variable "pool" {
       limit     = number
       used      = number
       available = optional(number)
+
+      # Where the series sits in its lifecycle. `growth_restricted` is the July
+      # 2026 capacity restriction: quota frozen at what is already approved, and
+      # new subscriptions cannot deploy the series at all.
+      # See knowledge/vm-series-lifecycle.yaml.
+      lifecycle  = optional(string, "current")
+      successors = optional(list(string), [])
+      retires_on = optional(string)
     }))
   })
+
+  validation {
+    condition = alltrue([
+      for f in values(var.pool.families) :
+      contains(["current", "previous_gen", "capacity_limited", "growth_restricted", "retirement_announced"], coalesce(f.lifecycle, "current"))
+    ])
+    error_message = "pool.families[*].lifecycle must be current, previous_gen, capacity_limited, growth_restricted or retirement_announced."
+  }
 }
 
 variable "rules" {

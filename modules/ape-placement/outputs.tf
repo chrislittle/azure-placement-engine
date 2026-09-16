@@ -11,6 +11,9 @@ output "decision" {
                        evaluated, not granted, and are refused when regional
                        capacity is short -- so this is NOT a promise
       blocked_by_rule  a business rule refused the request
+      blocked_by_lifecycle every candidate is under the July 2026 capacity
+                       growth restriction, which a NEW subscription cannot
+                       deploy at all. Successors are named in the reason
       blocked_by_access no candidate family can deploy here at all. A quota
                        allocation would not help; this needs a SKU or region
                        access request, or is final if the offer excludes it
@@ -37,6 +40,17 @@ output "decision" {
       headroom          = local.regional_headroom
       increase_required = local.regional_increase_required
       target            = local.regional_increase_required ? local.regional_target : var.pool.regional_cores_limit
+    }
+
+    # The capacity growth restrictions. Not a retirement -- most affected
+    # series remain fully supported under SLA; they just cannot grow.
+    lifecycle = {
+      new_subscription = local.new_subscription
+      denied           = local.lifecycle_denied
+      successors       = local.suggested_successors
+      # Families usable only within the quota they already hold. Relevant to an
+      # existing subscription, and fatal to a request that needs an increase.
+      frozen = [for f in local.access_permitted : f if local.lifecycle_of[f] == "growth_restricted"]
     }
 
     # Access is a gate in its own right, and APE only reports on it -- closing
