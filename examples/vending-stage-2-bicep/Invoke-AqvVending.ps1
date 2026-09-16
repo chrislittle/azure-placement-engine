@@ -95,7 +95,10 @@ Write-Host ("  reason   : {0}" -f $decision.reason)
 Write-Host ("  category : {0}" -f $decision.category)
 Write-Host ("  family   : {0}" -f $decision.family)
 Write-Host ("  writes   : {0}" -f @($decision.writes_required).Count)
-if ($decision.access.remediation) {
+# Only when access is what refused the request. A remediation is populated
+# whenever any family was denied, and printing it next to a size refusal sends
+# someone after a ticket that cannot help.
+if ($decision.status -eq 'blocked_by_access' -and $decision.access.remediation) {
     Write-Host ("  remedy   : {0}" -f $decision.access.remediation) -ForegroundColor Yellow
 }
 Write-Host ''

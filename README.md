@@ -151,7 +151,7 @@ allocating from a group succeeds where a quota increase may be refused.
 | `docs/GUIDE.md` | The manual |
 | `.github/workflows/` | Conformance, and stage 2 for both paths |
 | `examples/vending-stage-2/` | The stage-2 pattern, with a sample request |
-| `examples/what-can-i-deploy/` | For application teams. Read-only; needs only Reader |
+| `examples/what-can-i-deploy/` | For application teams. Terraform or PowerShell, read-only, needs only Reader |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
 
 ## Known constraints
