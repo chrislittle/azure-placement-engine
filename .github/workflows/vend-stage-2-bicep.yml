@@ -1,6 +1,6 @@
 # Stage 2 of subscription vending: quota and placement, Bicep path.
 #
-# Bicep cannot read quota state -- see docs/decisions/0001 -- so PowerShell reads
+# Bicep cannot read quota state -- see docs/GUIDE.md -- so PowerShell reads
 # and decides, and Bicep only writes. Same intake file and same answers as the
 # Terraform path; conformance.yml is what keeps them the same.
 

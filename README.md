@@ -115,7 +115,6 @@ headroom comes from rather than how the decision is made.
 | `.github/workflows/` | Conformance, and stage 2 for both paths |
 | `examples/vending-stage-2/` | The stage-2 pattern, with a sample intake |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
-| `docs/decisions/` | Dated architectural decisions |
 
 ## Known constraints
 

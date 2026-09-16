@@ -14,7 +14,7 @@ written. It reads the **same intake file** as the Terraform path.
 ## Why this is a script and a template, not a module
 
 Bicep cannot read quota state — see
-[decision 0001](../../docs/decisions/0001-terraform-is-the-reference-implementation.md).
+[decision 0001](../../docs/GUIDE.md#why-bicep-works-differently).
 `existing` fails the whole deployment with `NotFound` when a resource is absent,
 and `deploymentScripts` is idempotent, so a quota read would be silently stale
 from the first deployment onward.

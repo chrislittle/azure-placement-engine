@@ -1,7 +1,7 @@
 // Applies the quota writes a placement decision asked for.
 //
 // The Bicep half of the Bicep path. Bicep cannot read quota state -- see
-// docs/decisions/0001 -- so the reading and the deciding happen in
+// docs/GUIDE.md -- so the reading and the deciding happen in
 // powershell/ApePlacement.psm1, which emits a .bicepparam for this file.
 //
 // `limit` is absolute, never a delta, which is what lets a quota be expressed

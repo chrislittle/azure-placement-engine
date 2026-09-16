@@ -11,68 +11,61 @@ in a subscription vending pipeline.
 - [Business rules](#business-rules)
 - [Reading a decision](#reading-a-decision)
 - [GitHub Actions](#github-actions)
-- [Azure behaviour that will bite you](#azure-behaviour-that-will-bite-you)
+- [Azure behaviour to know](#azure-behaviour-to-know)
 - [Not covered yet](#not-covered-yet)
 
 ---
 
 ## Where APE fits
 
-Microsoft's [subscription vending guidance][vending] describes a pipeline whose
-deployment tasks are **Identity, Governance, Networking, Budgets and
-Reporting**. Quota is not among them. CAF names the gap and does not fill it:
+Microsoft's [subscription vending guidance][vending] lists five deployment
+tasks: identity, governance, networking, budgets and reporting. Quota is not one
+of them. The Cloud Adoption Framework states the problem but does not solve it:
 
 > They should also review the subscription quota limits before creating the
 > subscription
 
 > the quota request can fail, so you should run a script to handle any errors
 
-APE is that script, as modules, and it runs as a **second stage** after vending.
+APE is that script. It runs as a second stage, after the subscription exists.
 
 ```mermaid
-flowchart TB
-    A["<b>Data collection tool</b><br/>ITSM · portal · form"]
-    B["<b>Request pipeline</b><br/>opens a PR"]
-    C["<b>Subscription parameter file</b><br/><i>one per request — both stages read it</i>"]
-
-    A --> B --> C
-
-    C --> S1
-    subgraph S1 ["STAGE 1 — vending"]
-        D["<b>avm-ptn-sub-vending</b><br/>identity · governance · networking · budgets"]
-    end
-
-    S1 -- "subscription_id<br/><i>the entire handoff</i>" --> S2
-
-    subgraph S2 ["STAGE 2 — APE"]
-        direction LR
-        E["<b>ape-read</b><br/>what exists"] --> F["<b>ape-placement</b><br/>what to do"] --> G["<b>ape-apply</b><br/>write it"]
-    end
-
-    S2 --> H["<b>Hand off</b> to the application team"]
-
-    style S1 fill:#eef4fb,stroke:#5b8db8
-    style S2 fill:#eefbf2,stroke:#4a9d6a
-    style C fill:#fdf6e3,stroke:#b58900
+flowchart LR
+    A[Data collection tool] --> B[Request pipeline]
+    B --> C[Subscription parameter file]
+    C --> D[Stage 1: sub-vending]
+    D -- subscription_id --> E[Stage 2: APE]
+    E --> F[Application team]
 ```
 
-Stage 1 handles what the guidance already covers. Stage 2 is the column it
-leaves out.
+Stage 1 creates and configures the subscription. Stage 2 gives it quota.
+
+| Stage | Module | Task |
+|---|---|---|
+| 1 | `avm-ptn-sub-vending` | Create the subscription. Apply identity, governance, networking and budgets. |
+| 2 | `ape-read` | Read the quota, the SKUs and the region access. |
+| 2 | `ape-placement` | Choose a VM family. Calculate the quota to set. |
+| 2 | `ape-apply` | Write the quota. |
+
+Both stages read the same parameter file. Stage 1 gives stage 2 one value: the
+subscription ID.
 
 ### Why two stages and not one module
 
-A brand-new subscription does not exist at plan time. A single-stage module
-would defer every read to apply, and the placement decision would never appear
-in a plan. Run separately, stage 2 plans against a subscription that already
-exists: the chosen family, the quota to be written, and why every other family
-lost are all visible **before** anything is written.
+A new subscription does not exist when Terraform makes a plan. One module would
+have to defer every read until apply. The placement decision would then never
+appear in a plan.
 
-It also matches the guidance's own advice to use a dedicated Terraform state
-file per landing zone subscription, and it sidesteps a race — by the time stage
-2 runs, `Microsoft.Compute` provider registration has settled.
+Stage 2 runs against a subscription that already exists. The plan shows the
+chosen family, the quota to write, and the reason each other family was
+rejected. You can review all of it before anything is written.
 
-**`subscription_id` is the entire handoff.** `avm-ptn-sub-vending` already
-outputs it. The vending module needs no changes.
+Two stages give three more benefits:
+
+- A separate state file for each landing zone subscription, as the guidance
+  recommends.
+- No race with provider registration. Registration completes during stage 1.
+- No change to the vending module. It already outputs the subscription ID.
 
 ---
 
@@ -106,42 +99,70 @@ locally, or OIDC federated credentials in CI. Nothing stores credentials.
 
 ## The intake
 
-One YAML file per request, the "subscription parameter file" the guidance
-describes. Both stages read it; APE only reads `compute:`.
+One YAML file for each request. Both stages read it. APE reads only the
+`compute:` block.
 
-See [`examples/vending-stage-2/intake.example.yaml`](../examples/vending-stage-2/intake.example.yaml)
-for the full annotated version.
+### Minimum
 
 ```yaml
 compute:
   region: eastus
   vcpus: 64
-
-  # Azure's own vmCategories vocabulary:
-  #   GeneralPurpose | ComputeOptimized | MemoryOptimized | StorageOptimized
-  #   GpuAccelerated | FpgaAccelerated  | HighPerformanceCompute
-  category: MemoryOptimized
-
-  # Optional attributes. Omit one and it is not filtered on.
-  architecture: x64                 # x64 | Arm64
-  burstable: Excluded               # Excluded | Required
-  # confidential_computing: Required
-
-  # Optional placement. Not a preference -- it decides which families are
-  # eligible at all, because zone access is granted per SKU size and per zone.
-  placement:
-    type: zone_redundant            # regional | zonal | zone_redundant
-    zone_count: 3
-    # zones: ["1", "2"]             # for type: zonal
-
-  # Optional, most specific wins.
-  # family_allowlist: [standardEdsv6Family, standardEsv6Family]
-  # family: standardEdsv6Family
 ```
 
-**The application team states a workload class, not a VM family.** Nobody
-filling in a subscription request knows what `standardEDSv5Family` is, and they
-should not have to.
+### Every option
+
+All fields are optional except `region` and `vcpus`. Omit a field and APE does
+not filter on it.
+
+| Field | Type | Default | Values |
+|---|---|---|---|
+| `region` | string | **required** | Any Azure region name, for example `eastus`. |
+| `vcpus` | number | **required** | Greater than 0. |
+| `category` | string | any | `GeneralPurpose`, `ComputeOptimized`, `MemoryOptimized`, `StorageOptimized`, `GpuAccelerated`, `FpgaAccelerated`, `HighPerformanceCompute` |
+| `architecture` | string | any | `x64`, `Arm64` |
+| `burstable` | string | any | `Excluded`, `Required` |
+| `confidential_computing` | string | any | `Excluded`, `Required` |
+| `family_allowlist` | list | all | Azure family names, for example `standardEdsv6Family`. |
+| `family` | string | none | One Azure family name. |
+| `placement.type` | string | `regional` | `regional`, `zonal`, `zone_redundant` |
+| `placement.zones` | list | none | Zone numbers. Required when `type` is `zonal`. |
+| `placement.zone_count` | number | `3` | Used when `type` is `zone_redundant`. |
+
+Three fields narrow the candidate families. The most specific one wins:
+
+1. `family` selects one family. It overrides everything below.
+2. `family_allowlist` limits the candidates to a list.
+3. `category` and the attribute fields filter by shape.
+
+`placement.type` is not a preference. It decides which families are eligible.
+Azure grants zone access for each SKU size and each zone separately.
+
+The application team states a category. It does not state a VM family. A person
+who fills in a subscription request is not expected to know Azure family names.
+
+### Fields APE reads from outside `compute:`
+
+| Field | Used for |
+|---|---|
+| `subscription.environment` | Selects which business rule applies. |
+
+### Full example
+
+```yaml
+compute:
+  region: eastus
+  vcpus: 64
+  category: MemoryOptimized
+  architecture: x64
+  burstable: Excluded
+  placement:
+    type: zone_redundant
+    zone_count: 3
+```
+
+[`examples/vending-stage-2/intake.example.yaml`](../examples/vending-stage-2/intake.example.yaml)
+shows the `compute:` block inside a complete parameter file.
 
 ---
 
@@ -204,30 +225,20 @@ pwsh -File examples/vending-stage-2-bicep/Invoke-ApeVending.ps1 \
 Evaluates the decision and writes `ape-apply.bicepparam`. Nothing is deployed.
 Add `-Deploy` to apply it.
 
-Bicep cannot read quota state — see
-[decision 0001](decisions/0001-terraform-is-the-reference-implementation.md) —
-so on this path PowerShell reads and decides and Bicep only writes:
+Bicep cannot read quota state. On this path PowerShell does the read and the
+decision. Bicep does the write.
 
 ```mermaid
 flowchart LR
-    subgraph TF ["Terraform path"]
-        direction LR
-        T1["ape-read"] --> T2["ape-placement"] --> T3["ape-apply"]
-    end
-    subgraph BP ["Bicep path"]
-        direction LR
-        B1["ApeRead.psm1"] --> B2["ApePlacement.psm1"] --> B3[("ape-apply<br/>.bicepparam")] --> B4["ape-apply.bicep"]
-    end
-    TF -.-> X{{"conformance/scenarios<br/><i>both must give the same answer</i>"}}
-    BP -.-> X
-
-    style TF fill:#eef4fb,stroke:#5b8db8
-    style BP fill:#f6eefb,stroke:#8b5bb8
-    style X fill:#fdf6e3,stroke:#b58900
+    T1[ape-read] --> T2[ape-placement] --> T3[ape-apply]
+    B1[ApeRead.psm1] --> B2[ApePlacement.psm1] --> B3[ape-apply.bicepparam] --> B4[ape-apply.bicep]
 ```
 
-Everything left of the `.bicepparam` is PowerShell because Bicep cannot read.
-Only the last step can be Bicep.
+The top row is Terraform. The bottom row is the Bicep path. PowerShell does the
+read and the decision. Bicep does only the write.
+
+Both rows must give the same answer. The scenarios in `conformance/scenarios`
+test each one.
 
 The script forms no opinion of its own. It serialises `writes_required`
 unchanged, so Bicep receives exactly what the Terraform module would have
@@ -248,10 +259,11 @@ $decision = Get-ApePlacement -Request $request -Pool $state.pool `
 
 ## Business rules
 
-Rules belong to the **platform team**, not the requester, so they live in the
-module call rather than the intake. Evaluated in order; the first whose
-`environments` matches wins. A rule with no `environments` matches everything,
-so put the catch-all last.
+Rules belong to the platform team, not to the requester. They are set in the
+module call, not in the intake.
+
+APE evaluates rules in order and uses the first one whose `environments`
+matches. A rule with no `environments` matches every request, so put it last.
 
 ```hcl
 rules = [
@@ -285,53 +297,29 @@ platform team says "use up the cheap family first".
 
 ## Reading a decision
 
-Four gates, checked in this order. Each fails for a different reason and has a
-different remedy, and none of the ones below it means anything until the ones
-above pass.
+APE applies four gates, in this order.
 
 ```mermaid
-flowchart TB
-    Q(["request"]) --> G1
-
-    subgraph G1 ["① region"]
-        R1{"Microsoft.Compute<br/>registered?"} -- no --> S1[/"<b>not_ready</b><br/>wait and retry"/]
-        R1 -- yes --> R2{"region<br/>granted?"}
-        R2 -- no --> S2[/"<b>blocked_by_region</b><br/>region access request"/]
-    end
-
-    R2 -- yes --> G2
-    subgraph G2 ["② lifecycle"]
-        L1{"any candidate<br/>not growth-restricted?"} -- no --> S3[/"<b>blocked_by_lifecycle</b><br/>use a successor family"/]
-    end
-
-    L1 -- yes --> G3
-    subgraph G3 ["③ access"]
-        A1{"any candidate<br/>deployable here?"} -- no --> S4[/"<b>blocked_by_access</b><br/>read access.remediation"/]
-    end
-
-    A1 -- yes --> G4
-    subgraph G4 ["④ quota"]
-        Q1{"headroom<br/>covers it?"} -- yes --> S5[/"<b>satisfied</b><br/>no writes"/]
-        Q1 -- no --> Q2{"a pool can<br/>cover it?"}
-        Q2 -- yes --> S6[/"<b>needs_allocation</b><br/>self-service, will succeed"/]
-        Q2 -- no --> Q3{"can any family<br/>reach the size?"}
-        Q3 -- yes --> S7[/"<b>needs_increase</b><br/>evaluated, NOT a promise"/]
-        Q3 -- no --> S8[/"<b>infeasible</b>"/]
-    end
-
-    style G1 fill:#fbeeee,stroke:#b85b5b
-    style G2 fill:#fdf6e3,stroke:#b58900
-    style G3 fill:#f6eefb,stroke:#8b5bb8
-    style G4 fill:#eefbf2,stroke:#4a9d6a
+flowchart LR
+    A[1. Region] --> B[2. Lifecycle] --> C[3. Access] --> D[4. Quota] --> E[Decision]
 ```
 
-A business rule can refuse before any of this with `blocked_by_rule`.
+| Gate | Question | Failure status |
+|---|---|---|
+| 1. Region | Can the subscription reach the region? | `not_ready`, `blocked_by_region` |
+| 2. Lifecycle | Is any candidate family still open to new subscriptions? | `blocked_by_lifecycle` |
+| 3. Access | Can the subscription deploy any candidate here? | `blocked_by_access` |
+| 4. Quota | Can any candidate reach the requested size? | `needs_increase`, `infeasible` |
 
-**Quota and access fail independently.** A quota group grants neither regional
-nor zonal access, so allocating quota for a family the subscription cannot
-deploy buys a guaranteed failure. That is why access is checked first.
+A gate means nothing until the gates above it pass. Quota and access are
+separate. A quota group grants no regional access and no zonal access. Quota for
+a family the subscription cannot deploy is therefore useless. APE checks access
+first.
 
-`status` is the load-bearing field. Every value tells you what to do next.
+A business rule can reject the request before any gate runs. That gives
+`blocked_by_rule`.
+
+Use `status` to decide what to do next.
 
 | `status` | Meaning | What to do |
 |---|---|---|
@@ -422,18 +410,17 @@ Operator on the vended subscription.
 
 ### Choosing runners
 
-`runs-on` is driven by two repository variables, so the workflows work
-unchanged for anyone who clones this repo and route to your own machines when
-you want them to:
+Two repository variables set `runs-on`. Leave them unset and the workflows use
+GitHub-hosted runners. Set them and the jobs run on your own machines.
 
 | Variable | Unset | Set |
 |---|---|---|
 | `CI_RUNNER_LINUX` | `ubuntu-latest` | that label — Terraform and Bicep jobs |
 | `CI_RUNNER_WINDOWS` | `ubuntu-latest` | that label — PowerShell jobs |
 
-The PowerShell jobs want `pwsh` and the Bicep job wants the Azure CLI, so point
-`CI_RUNNER_WINDOWS` at a machine with PowerShell and `CI_RUNNER_LINUX` at one
-with `az`.
+The PowerShell jobs need `pwsh`. The Bicep job needs the Azure CLI. Point
+`CI_RUNNER_WINDOWS` at a machine with PowerShell. Point `CI_RUNNER_LINUX` at a
+machine with `az`.
 
 > **Self-hosted runners cannot be shared between repositories on a personal
 > account.** Runner *groups*, the mechanism for sharing, exist only for
@@ -461,68 +448,11 @@ gh variable set CI_RUNNER_LINUX --body ape-ci-linux
 > Do not set the variable before the runner is registered and online, or jobs
 > queue waiting for a runner that does not exist.
 
-**A public repository gets unlimited GitHub-hosted minutes** for standard
-runners, so if this repo is going public anyway, that removes the problem
-without any of the above.
+A public repository gets unlimited GitHub-hosted minutes for standard runners.
+If this repository becomes public, none of the above is needed.
 
 ### Reviewing before writing
 
-The useful shape is **plan on the PR, apply on merge**. Stage 2 plans cleanly
-against an existing subscription, so the decision — chosen family, quota to be
-written, why every other family lost — shows up in the PR before anything
-happens.
-
----
-
-## Azure behaviour that will bite you
-
-All of this is recorded, dated and sourced in [`knowledge/`](../knowledge). The
-short version:
-
-**Quota is not evidence a family exists.** A family can report a healthy limit
-in a region where Azure offers no sizes of it. On a live subscription, 14 of 97
-families holding quota in East US had zero SKUs there.
-
-**`locationInfo[].zones` overstates.** `restrictions[]` removes zones, and the
-restricted list is not constrained to be a subset of the published one.
-`Standard_D1` in East US publishes zones 2 and 3 while restricting 1, 2 and 3 —
-netting to nothing deployable zonally.
-
-**A Zone restriction does not block regional placement.** Confirmed by
-deployment, not documented by Microsoft.
-
-**Some regions have no zones at all.** West Central US reports 916 VM SKUs and
-not one zone. There is no ticket that adds zones to a region.
-
-**`Microsoft.Compute/skus` cannot see region access.** For Germany North — which
-one test subscription cannot deploy to — it returned 866 VM SKUs of which 796
-carried no restriction whatsoever. Only the quota read reveals the gap.
-
-**New subscriptions cannot deploy growth-restricted series at all.** Not "cannot
-grow" — cannot deploy. That is 30 series, and on one live subscription, 25 of
-the 97 families holding quota in East US.
-
-**A `202` from a quota PUT is not an approval.** It means Azure agreed to
-evaluate. Observed: `InProgress` for ~35 seconds, then `Failed`.
-
-**`isQuotaApplicable` is not a pre-check.** It returned `true` for a family
-whose write was then structurally refused.
-
----
-
-## Not covered yet
-
-**Quota groups.** `Microsoft.Quota/groupQuotas` would let a platform pool quota
-across subscriptions and reallocate it self-service — including harvesting
-unused quota from existing subscriptions. The design is researched and the
-contract is in place (`pool.families[*].available` is the hook), but it needs an
-EA, MCA-Enterprise or Internal billing account to exercise. See
-[`knowledge/quota-groups.yaml`](../knowledge/quota-groups.yaml).
-
-**The ODCR capacity buffer.** Deferred deliberately. A capacity reservation
-binds to an exact VM size, which suits a customer who has already fixed on one
-and not the flexible-intake case that is most of the value. It also needs quota
-in the *consuming* subscription, which growth restrictions can make
-unobtainable. See [`knowledge/capacity-signals.yaml`](../knowledge/capacity-signals.yaml).
-
-[vending]: https://learn.microsoft.com/en-us/azure/architecture/landing-zones/subscription-vending
+Stage 2 plans against a subscription that already exists. The plan shows the
+chosen family, the quota to write, and the reason each other family was
+rejected. Review it in the pull request before anything is written.

@@ -4,7 +4,7 @@
     .bicepparam to Bicep to write.
 
     .DESCRIPTION
-    Bicep cannot read quota state -- see docs/decisions/0001 -- so on this path
+    Bicep cannot read quota state -- see docs/GUIDE.md -- so on this path
     the reading and the deciding happen in PowerShell and Bicep only writes.
     The Terraform path does all three in Terraform; both are held to the same
     answers by conformance/scenarios.

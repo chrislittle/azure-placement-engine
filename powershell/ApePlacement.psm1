@@ -1,6 +1,6 @@
 # The placement decision, in PowerShell, for the Bicep path.
 #
-# Bicep cannot read quota state -- see docs/decisions/0001 -- so on that path the
+# Bicep cannot read quota state -- see docs/GUIDE.md -- so on that path the
 # reading and the deciding happen here and Bicep only writes. On the Terraform
 # path all three happen in Terraform.
 #

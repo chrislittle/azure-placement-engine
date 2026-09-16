@@ -7,7 +7,7 @@ APE ships two implementations of the same decision:
 | **Terraform** | `modules/ape-read` | `modules/ape-placement` | `modules/ape-apply` |
 | **Bicep** | `powershell/ApeRead.psm1` | `powershell/ApePlacement.psm1` | `bicep/ape-apply.bicep` |
 
-Bicep cannot read quota state ([decision 0001](../docs/decisions/0001-terraform-is-the-reference-implementation.md)),
+Bicep cannot read quota state (see [the manual](../docs/GUIDE.md#why-bicep-works-differently)),
 so on that path PowerShell reads and decides and Bicep only writes. That means
 **the decision logic exists twice**, which is a real cost.
 
