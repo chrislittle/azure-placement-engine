@@ -1,0 +1,54 @@
+{
+  "description": "The decision names deployable sizes, not just a family. A family cannot be deployed; a size can. Terraform returned an empty list here while PowerShell did not, because the vCPU count was never carried through the read.",
+  "request": {
+    "region": "eastus",
+    "vcpus": 8,
+    "family": "standardDsv6Family"
+  },
+  "quota": {
+    "regional_cores_limit": 500,
+    "regional_cores_used": 0,
+    "families": {
+      "standardDsv6Family": {
+        "limit": 100,
+        "used": 0,
+        "category": "GeneralPurpose"
+      }
+    }
+  },
+  "sku_access": {
+    "standardDsv6Family": {
+      "sizes": {
+        "Standard_D8s_v6": {
+          "zones": [
+            "1",
+            "2",
+            "3"
+          ],
+          "vcpus": 8
+        },
+        "Standard_D4s_v6": {
+          "zones": [
+            "1",
+            "2",
+            "3"
+          ],
+          "vcpus": 4
+        },
+        "Standard_D2s_v6": {
+          "zones": [
+            "1",
+            "2"
+          ],
+          "vcpus": 2
+        }
+      }
+    }
+  },
+  "rules": [],
+  "expect": {
+    "status": "satisfied",
+    "family": "standardDsv6Family",
+    "sizes": 3
+  }
+}

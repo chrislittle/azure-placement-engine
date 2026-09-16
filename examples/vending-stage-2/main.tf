@@ -53,8 +53,13 @@ variable "apply_writes" {
 locals {
   # Two inputs, two owners. The request comes from the application team, one per
   # subscription. The rules come from the platform team, one per platform.
-  request_doc = yamldecode(file("${path.module}/${var.request_file}"))
-  rules_doc   = yamldecode(file("${path.module}/${var.rules_file}"))
+  # Accept either an absolute path or one relative to this directory. A pipeline
+  # may well hand over an absolute path, and silently failing on it is unkind.
+  request_path = can(regex("^([A-Za-z]:|/)", var.request_file)) ? var.request_file : "${path.module}/${var.request_file}"
+  rules_path   = can(regex("^([A-Za-z]:|/)", var.rules_file)) ? var.rules_file : "${path.module}/${var.rules_file}"
+
+  request_doc = yamldecode(file(local.request_path))
+  rules_doc   = yamldecode(file(local.rules_path))
 
   compute = local.request_doc.compute
 

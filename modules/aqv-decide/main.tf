@@ -152,6 +152,10 @@ locals {
           toset(try(sz.restricted_zones, [])),
         )))
         location_restricted = sz.location_restricted
+
+        # Carried through so the decision can name deployable sizes. Optional,
+        # because a caller may supply sku_access without it.
+        vcpus = try(sz.vcpus, null)
       }
     ]
   }
@@ -308,10 +312,12 @@ locals {
   # zone restrictions, or the workload team is left to work that out alone.
   chosen_sizes = local.chosen == null ? [] : [
     for sz in try(local.size_access[local.chosen], []) : {
-      name     = sz.name
-      vcpus    = try(sz.vcpus, null)
-      zones    = sz.effective_zones
-      count_at = try(sz.vcpus, 0) > 0 ? ceil(var.request.vcpus / sz.vcpus) : null
+      name  = sz.name
+      vcpus = sz.vcpus
+      zones = sz.effective_zones
+      # A conditional evaluates both branches for type checking, so dividing
+      # by a null vcpus fails even when the guard is false.
+      count_at = sz.vcpus == null ? null : ceil(var.request.vcpus / max(sz.vcpus, 1))
     }
     if !sz.location_restricted && (
       local.placement_type == "regional"

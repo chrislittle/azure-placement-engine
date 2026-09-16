@@ -66,6 +66,10 @@ locals {
           restricted_zones    = s.restricted_zones
           location_restricted = s.location_restricted
           restriction_reason  = s.restriction_reason
+
+          # The workload team deploys a SIZE, not a family, so the size
+          # carries its own vCPU count through to the decision.
+          vcpus = s.vcpus
         } if s.family == f
       }
     }

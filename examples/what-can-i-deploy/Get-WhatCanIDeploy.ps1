@@ -44,10 +44,11 @@ param(
     # families can still be used within quota already granted, but not grown.
     [switch]$NewSubscription,
 
-    # Optional. The platform team's rules file.
+    # Optional, and not needed by a workload team. The quota this reads already
+    # reflects whatever the rules allowed when it was granted.
     #
-    # Without it, the answer is what AZURE permits. With it, the answer is what
-    # the PLATFORM would grant, which can be stricter.
+    # This exists for a platform engineer previewing a decision before running
+    # the pipeline. Rules are enforced in the pipeline, not here.
     [string]$RulesFile,
 
     [switch]$AsJson
@@ -97,14 +98,13 @@ Write-Host ''
 Write-Host ("  status     : {0}" -f $decision.status)
 Write-Host ("  reason     : {0}" -f $decision.reason)
 
-# Without a rules file this says what Azure permits. The platform may be
-# stricter, and the pipeline applies those rules.
+# Rules are enforced in the pipeline, not here. Naming the applied rule is only
+# useful when someone passed one deliberately.
 if ($RulesFile) {
     Write-Host ("  rule       : {0}" -f $decision.rule_applied)
 }
 else {
-    Write-Host '  rule       : none applied — this is what Azure permits,' -ForegroundColor DarkYellow
-    Write-Host '               not what the platform would grant' -ForegroundColor DarkYellow
+    Write-Host '  rule       : none — this is the quota the subscription has' -ForegroundColor DarkGray
 }
 
 if ($decision.family) {

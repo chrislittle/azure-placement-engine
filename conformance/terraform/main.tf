@@ -70,6 +70,10 @@ locals {
       length(module.placement[name].decision.access.not_offered) == s.expect.not_offered ? "" :
       "access.not_offered: expected ${s.expect.not_offered}, got ${length(module.placement[name].decision.access.not_offered)}",
 
+      !contains(keys(s.expect), "sizes") ? "" :
+      length(module.placement[name].decision.sizes) == s.expect.sizes ? "" :
+      "sizes: expected ${s.expect.sizes}, got ${length(module.placement[name].decision.sizes)}",
+
       !contains(keys(s.expect), "rule_applied") ? "" :
       module.placement[name].decision.rule_applied == s.expect.rule_applied ? "" :
       "rule_applied: expected ${s.expect.rule_applied}, got ${module.placement[name].decision.rule_applied}",

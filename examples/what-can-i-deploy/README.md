@@ -25,31 +25,19 @@ terraform apply \
 
 There is no Bicep version. Bicep only writes, and this asks a question.
 
-## Two different questions
+## It does not apply the platform's rules
 
-Run it **without** a rules file and the answer is what **Azure** permits.
+It reads the quota the subscription actually has.
 
-Run it **with** the platform team's `rules.yaml` and the answer is what the
-**platform** would grant, which can be stricter. That is the answer the pipeline
-would give.
+It does not need the rules. The platform team's rules already decided what quota
+was granted; asking again does not re-run them. Rules are enforced in the
+pipeline, where the platform team controls which rules file is used. A script a
+workload team runs could never enforce anything — they would simply not pass the
+file.
 
-```bash
-# what Azure permits
-./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8
-
-# what the platform would grant
-./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8 `
-    -RulesFile ../../platform/rules.yaml
-```
-
-The output always says which one it answered. Without rules:
-
-```text
-  rule       : none applied — this is what Azure permits,
-               not what the platform would grant
-```
-
-The Terraform version takes the same file as `-var rules_file=...`.
+`-RulesFile` (or `-var rules_file=` for Terraform) exists for a platform
+engineer previewing a decision before running the pipeline. A workload team does
+not need it.
 
 ## It writes nothing
 
