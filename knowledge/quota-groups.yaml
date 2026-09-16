@@ -101,3 +101,45 @@ mg_deletion_warning: >
   recreate the MG with the same ID. To wind a group down cleanly: allocate cores
   back out to subscriptions, delete the subscriptions, delete the group object,
   then delete the MG.
+
+# Reading state for a rebalance. Two different shapes, both needed.
+reading_state:
+  group_aggregate:
+    path: >
+      GET /providers/Microsoft.Management/managementGroups/{mg}/providers/Microsoft.Quota
+      /groupQuotas/{group}/resourceProviders/Microsoft.Compute/locationUsages/{location}
+    api_version: 2025-09-01
+    returns: per-family `limit` and `usages` for the GROUP as a whole
+    note: Microsoft.Compute is currently the only RP supporting this API.
+  per_subscription:
+    note: >
+      locationUsages is aggregate only -- it cannot tell you WHICH subscription
+      is sitting on idle quota. That needs a fan-out read of
+      Microsoft.Compute/locations/{region}/usages per member subscription, plus
+      `allocatedToSubscriptions` from the groupQuotaLimits snapshot.
+
+# Terraform reachability, checked 2026-09-16.
+iac_support:
+  azurerm: none -- hashicorp/terraform-provider-azurerm#29849 open
+  azapi:
+    Microsoft.Quota/groupQuotas: 2026-09-01-preview
+    Microsoft.Quota/groupQuotas/subscriptions: 2025-09-01
+    Microsoft.Quota/groupQuotas/resourceProviders/quotaAllocationRequests: 2025-07-15
+    Microsoft.Quota/groupQuotas/resourceProviders/groupQuotaRequests: 2023-06-01-preview
+  version_spread_warning: >
+    Four types across four API versions, none of which is the 2025-03-01 the
+    how-to docs use. Pin deliberately and expect churn.
+  request_shaped_warning: >
+    Allocation is modelled as quotaAllocation*Requests*, not as a desired-state
+    resource. The `limit` in the body is absolute, but Terraform sees a request
+    object rather than the allocation itself, so update and replace semantics
+    need proving before the module design leans on them.
+
+# Harvesting idle quota is self-service and is the most useful thing APE can do
+# with this feature. It is also taking cores from a subscription someone else
+# owns, so the authorisation must not come from a usage reading.
+rebalance_note: >
+  Current usage is a point-in-time number. A subscription reading 40 of 500 may
+  be a scale set that bursts to 480 nightly, and harvesting to usage-plus-margin
+  would break it. Owners should declare a floor they keep; usage informs the
+  recommendation, the declaration authorises the take.
