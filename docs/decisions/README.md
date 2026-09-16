@@ -3,13 +3,7 @@
 Short, dated records of architectural decisions and the reasoning behind them.
 One file per decision, `NNNN-slug.md`, append-only — supersede rather than edit.
 
-The seven contract decisions taken during initial scoping are captured inline in
-[`../ARCHITECTURE.md`](../ARCHITECTURE.md#decisions-taken), together with their
-grounding in CAF (region-selection criteria) and WAF (flows). Also recorded there:
-
-- Advisory plane, not control plane
-- Input schema as an ancestor of the thesis's `outcome.yaml`
-- Deterministic solver core; LLMs only at intake, curation, and narration
-- Two separate data planes (pinned world snapshot vs. live tenant context)
-- Capacity split: hard elimination where proven, scored confidence where inferred
-- Unknown capability is a risk on the survivor, never a silent pass
+Decisions taken before the pivot to IaC modules are captured in
+[`../../archive/v0-advisory-engine/ARCHITECTURE.md`](../../archive/v0-advisory-engine/ARCHITECTURE.md).
+They describe an advisory engine that ranked regions, and **are superseded** —
+kept for the reasoning, not as statements of current intent.
