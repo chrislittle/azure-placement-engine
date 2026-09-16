@@ -28,6 +28,22 @@ needs. AQV runs next and does three things:
 It returns the chosen family, the quota it set, and the reason every other
 family was rejected.
 
+### Where the quota is meant to come from
+
+A **quota group** — `Microsoft.Quota/groupQuotas` — is a pool the platform
+holds, and allocating from it to a subscription is self-service. That is the
+point of this project: vending draws down a pool the platform already owns,
+rather than asking Azure for more at the moment a workload needs it.
+
+**The quota group layer is not built.** Until it is, AQV reads, decides and
+reports, and writes the regional cap when that is what binds. It does not raise
+per-subscription family limits, and it is not meant to: a family is only chosen
+when its existing quota, or a pool behind it, already covers the request.
+
+On a subscription with no quota group, that means an ask above the current limit
+comes back `infeasible` rather than becoming a support request. See
+[Not built yet](#not-built-yet).
+
 ## What it does not do
 
 **AQV does not deploy anything.** It creates no virtual machine, no scale set
@@ -126,9 +142,15 @@ implemented. Neither can be exercised on an ordinary subscription.
 | Quota group | `Microsoft.Quota/groupQuotas` | A platform-wide quota reserve. Allocating from it to a subscription is self-service and fast. Raising the group's own limit is not. Requires an EA, MCA-Enterprise or Internal billing account. |
 | Capacity reservation | `Microsoft.Compute/capacityReservationGroups` | Guaranteed hardware, held in advance. Costs money while idle and binds to one exact VM size. |
 
-The contract already anticipates the first. Set `available` on a family and the
-decision returns `needs_allocation` instead of `needs_increase`, because
-allocating from a group succeeds where a quota increase may be refused.
+The quota group is the goal, not a nice-to-have. The contract for it is already
+in place: set `available` on a family and that family becomes a candidate even
+when its own limit is short, and the decision returns `needs_allocation`.
+Allocating from a group succeeds, where a per-subscription increase is evaluated
+and can be refused.
+
+Testing it needs an EA, MCA-Enterprise or Internal billing account. Until then
+`available` is null everywhere, so nothing is ever allocatable and the
+`needs_allocation` path never runs outside the conformance scenarios.
 
 ## Layout
 

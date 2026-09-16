@@ -256,8 +256,9 @@ writes      : 0
 ```
 
 `satisfied` with no writes means the quota is already there. Stop here if that is
-all you needed. Steps 6 to 9 matter when the answer is `needs_increase` or
-`needs_allocation`, because then something has to be written.
+all you needed. Steps 6 to 9 matter when something has to be written — today
+that means the regional cap, and once quota groups are wired up it also means
+allocating from the pool.
 
 ### 6. Grant the pipeline identity its rights
 
@@ -403,7 +404,9 @@ terraform apply -var subscription_id=$SUB -var apply_writes=true
 </details>
 
 A quota write is slow. Raising one family limit from 10 to 16 took three and a
-half minutes:
+half minutes. This one was driven through `aqv-apply` directly, because without
+a quota group the decision never asks for a family limit — see
+[What AQV will and will not ask Azure for](#what-aqv-will-and-will-not-ask-azure-for):
 
 ```text
 module.apply.azapi_update_resource.family[0]: Creating...
@@ -946,14 +949,33 @@ Use `status` to decide what to do next.
 | `status` | Meaning | What to do |
 |---|---|---|
 | `satisfied` | Existing quota covers it. | Nothing. `writes_required` is empty. |
-| `needs_allocation` | A quota group can cover the shortfall. | Apply. Allocation is self-service and will succeed. |
-| `needs_increase` | A quota limit increase is required. | Apply, but **this is not a promise** — increases are evaluated, not granted. |
+| `needs_allocation` | A quota group covers the shortfall. | Apply. Allocation is self-service and will succeed. **Needs a quota group, which is not built yet.** |
+| `needs_increase` | The regional cap has to be raised. | Apply, but **this is not a promise** — increases are evaluated, not granted. |
 | `not_ready` | `Microsoft.Compute` is not registered yet. | **Wait and retry.** Transient, and normal right after vending. |
 | `blocked_by_region` | The subscription cannot reach the region at all. | Region access request. No quota action helps. |
 | `blocked_by_lifecycle` | Every candidate is under the July 2026 capacity growth restrictions. | Use a successor family — the reason names them. |
 | `blocked_by_access` | No candidate can deploy here. | Read `access.remediation`; it names the right ticket, or says there isn't one. |
 | `blocked_by_rule` | A business rule refused it. | Change the request or the rule. |
 | `infeasible` | No candidate family can reach the requested size. | Different region, family, or size. |
+
+### What AQV will and will not ask Azure for
+
+A family is a candidate only when the quota it already has, or a quota group
+behind it, covers the request. AQV does not ask Azure to raise a family limit
+that is short.
+
+That is deliberate. The design draws quota from a **quota group** the platform
+owns, where allocation is self-service and succeeds. A per-subscription increase
+is a request Azure evaluates and often refuses, which is not something to build
+a vending pipeline on.
+
+**The quota group layer is not built yet.** On a subscription without one,
+`available` is null for every family, nothing is allocatable, and an ask above
+the current limit returns `infeasible`. The only write AQV produces today is the
+regional cap, when a family has the headroom but the cap does not.
+
+`writes_required` will carry a family limit once quota groups are wired up. See
+[Not covered yet](#not-covered-yet).
 
 Other fields worth reading:
 
@@ -1139,13 +1161,18 @@ holds one set of scenarios. Both implementations must pass all of them.
 
 ## Not covered yet
 
-**Quota groups.** `Microsoft.Quota/groupQuotas` would let a platform pool quota
-across subscriptions and reallocate it self-service — including harvesting
-quota that a subscription holds and never uses.
+**Quota groups. This is the one that matters.** `Microsoft.Quota/groupQuotas`
+lets a platform pool quota across subscriptions and reallocate it self-service,
+including harvesting quota a subscription holds and never uses. Allocating from
+a pool succeeds. Asking Azure for a per-subscription increase does not, and that
+difference is the whole reason for this design.
 
-The contract is in place: set `quota.families[*].available` and the decision
-returns `needs_allocation` instead of `needs_increase`. Testing it needs an EA,
-MCA-Enterprise or Internal billing account.
+The contract is in place: set `quota.families[*].available` and that family
+becomes a candidate even when its own limit is short, with status
+`needs_allocation`. Until then `available` is null everywhere, so nothing is
+allocatable and an ask above the current limit comes back `infeasible`.
+
+Testing it needs an EA, MCA-Enterprise or Internal billing account.
 [`knowledge/quota-groups.yaml`](../knowledge/quota-groups.yaml).
 
 **The ODCR capacity buffer.** Deferred deliberately. A capacity reservation

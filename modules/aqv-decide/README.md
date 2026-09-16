@@ -134,8 +134,8 @@ with no `environments` matches every request, so place it last.
 | Value | Meaning | Action |
 |---|---|---|
 | `satisfied` | Existing quota covers the request. | None. |
-| `needs_allocation` | A quota group covers the shortfall. | Apply. Allocation is self-service. |
-| `needs_increase` | A quota limit increase is needed. | Apply. Azure evaluates the request. It is not a promise. |
+| `needs_allocation` | A quota group covers the shortfall. | Apply. Allocation is self-service. Needs a quota group, which is not built yet. |
+| `needs_increase` | The regional cap has to be raised. | Apply. Azure evaluates the request. It is not a promise. |
 | `not_ready` | `Microsoft.Compute` is not registered. | Wait, then retry. |
 | `blocked_by_region` | The subscription cannot use the region. | Raise a region access request. |
 | `blocked_by_lifecycle` | Every candidate is growth-restricted. | Use a successor family. The reason names them. |
@@ -186,8 +186,17 @@ obtain more. Set `request.new_subscription` correctly.
 ### Unproven capacity
 
 `available = null` means no quota group sits behind the subscription. The module
-treats that as unproven, not as unlimited. This is what separates
-`needs_allocation` from `needs_increase`.
+treats that as unproven, not as unlimited.
+
+This is the gate that decides whether a family is a candidate at all. A family
+qualifies when `unused + allocatable` covers the request, and `allocatable` is
+`available`. So with no quota group, a family whose own limit is short is never
+chosen, and the answer is `infeasible`.
+
+That is intended. The module allocates from a pool; it does not ask Azure to
+raise a per-subscription limit, because that request is evaluated and often
+refused. Set `available` and the same family becomes a candidate, with status
+`needs_allocation`.
 
 ### A family is not deployable
 
