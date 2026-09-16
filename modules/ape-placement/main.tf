@@ -48,6 +48,83 @@ locals {
   unknown_families = [for f in local.rule_permitted : f if !contains(keys(var.pool.families), f)]
   known_families   = [for f in local.rule_permitted : f if contains(keys(var.pool.families), f)]
 
+  # --- Access gate -------------------------------------------------------
+  #
+  # Checked before quota, and kept separate from it. Quota groups explicitly do
+  # not grant regional or zonal access, so these two gates fail independently
+  # and have different remedies: a quota shortfall is an allocation, an access
+  # gap is a support request with lead time.
+  #
+  # APE does not close access gaps. It refuses to allocate against them and
+  # says what would lift them.
+
+  placement_type = coalesce(try(var.request.placement.type, null), "regional")
+  wanted_zones   = coalesce(try(var.request.placement.zones, null), [])
+  wanted_zone_count = (
+    local.placement_type == "zone_redundant"
+    ? coalesce(try(var.request.placement.zone_count, null), 3)
+    : 0
+  )
+
+  access_checked = length(keys(var.sku_access)) > 0
+
+  # effective = published MINUS restricted, and nothing at all when the size is
+  # restricted at Location level. The subtraction lives here rather than in the
+  # caller because getting it wrong is the whole failure mode.
+  size_access = {
+    for f, fa in var.sku_access : f => [
+      for name, sz in fa.sizes : {
+        name   = name
+        reason = sz.restriction_reason
+        effective_zones = sz.location_restricted ? [] : sort(tolist(setsubtract(
+          toset(coalesce(sz.zones, [])),
+          toset(coalesce(sz.restricted_zones, [])),
+        )))
+        location_restricted = sz.location_restricted
+      }
+    ]
+  }
+
+  # A family is deployable if at least ONE of its sizes satisfies the placement
+  # type -- customers buy a family's worth of quota but deploy a specific size.
+  #
+  # ASSUMPTION, not documented by Microsoft: a Zone-type restriction blocks
+  # zonal deployment but leaves regional deployment available, which is why the
+  # API distinguishes Zone from Location at all. If that turns out false, the
+  # regional branch below is the line to change. See knowledge/zone-restrictions.yaml.
+  family_deployable = {
+    for f, sizes in local.size_access : f => (
+      local.placement_type == "regional"
+      ? length([for sz in sizes : sz if !sz.location_restricted]) > 0
+      : local.placement_type == "zonal"
+      ? length([for sz in sizes : sz if length(setsubtract(toset(local.wanted_zones), toset(sz.effective_zones))) == 0]) > 0
+      : length([for sz in sizes : sz if length(sz.effective_zones) >= local.wanted_zone_count]) > 0
+    )
+  }
+
+  # QuotaId means the subscription's offer excludes the SKU and no support
+  # ticket will change it. NotAvailableForSubscription is an entitlement gap and
+  # is requestable. Reporting the first as requestable wastes the customer's time.
+  family_reasons = {
+    for f, sizes in local.size_access : f => distinct(compact([for sz in sizes : sz.reason]))
+  }
+
+  access_permitted = !local.access_checked ? local.known_families : [
+    for f in local.known_families : f
+    if !contains(keys(local.size_access), f) || local.family_deployable[f]
+  ]
+
+  access_denied = !local.access_checked ? [] : [
+    for f in local.known_families : f
+    if contains(keys(local.size_access), f) && !local.family_deployable[f]
+  ]
+
+  # Present in the pool, absent from the SKU data. Permitted, but never
+  # reported as verified -- silence is not evidence of access.
+  access_unverified = !local.access_checked ? local.known_families : [
+    for f in local.known_families : f if !contains(keys(local.size_access), f)
+  ]
+
   # Per-family arithmetic.
   #
   #   headroom  -- deployable right now, with no quota change at all
@@ -55,7 +132,7 @@ locals {
   #                there is no pool behind this subscription, so nothing is
   #                proven; it is deliberately NOT treated as unlimited.
   assessed = [
-    for f in local.known_families : {
+    for f in local.access_permitted : {
       family    = f
       limit     = var.pool.families[f].limit
       used      = var.pool.families[f].used
@@ -114,16 +191,27 @@ locals {
   # therefore whether the answer can be relied on. A request needing a limit
   # increase is not a promise: increases are evaluated and can be refused when
   # regional capacity is short.
+  all_blocked_by_access = local.access_checked && length(local.access_permitted) == 0 && length(local.access_denied) > 0
+
   status = (
     local.over_rule_cap ? "blocked_by_rule" :
+    local.all_blocked_by_access ? "blocked_by_access" :
     local.chosen == null ? "infeasible" :
     local.chosen_detail.satisfied_now && !local.regional_increase_required ? "satisfied" :
     local.chosen_detail.pooled && !local.regional_increase_required ? "needs_allocation" :
     "needs_increase"
   )
 
+  # Whether an access gap is worth raising a ticket over, or is simply final.
+  requestable = contains(flatten([for f in local.access_denied : local.family_reasons[f]]), "NotAvailableForSubscription")
+
   reason = (
     local.over_rule_cap ? format("rule %q caps requests at %d vCPUs", local.rule_name, local.rule_cap) :
+    local.all_blocked_by_access ? format(
+      "no candidate family has %s access on this subscription; %s",
+      local.placement_type == "regional" ? "regional" : "zonal",
+      local.requestable ? "requestable via a SKU access request" : "the subscription offer excludes it, which no support ticket will change",
+    ) :
     length(local.known_families) == 0 ? "no candidate family is present in the pool" :
     local.chosen == null ? format("no candidate family can reach %d vCPUs", var.request.vcpus) :
     local.status == "satisfied" ? "existing quota covers the request" :

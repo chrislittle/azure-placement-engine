@@ -11,12 +11,63 @@ variable "request" {
     family           = optional(string)
     family_allowlist = optional(list(string))
     environment      = optional(string, "prod")
+
+    # How the workload will be placed. This is not a preference -- it changes
+    # which families are eligible at all, because zone access is granted per
+    # SKU size and per zone.
+    #
+    #   regional        no zone pinned; Azure places it in the region
+    #   zonal           pinned to `zones`; every one must be usable
+    #   zone_redundant  spread across `zone_count` distinct zones
+    placement = optional(object({
+      type       = optional(string, "regional")
+      zones      = optional(list(string))
+      zone_count = optional(number)
+    }), {})
   })
 
   validation {
     condition     = var.request.vcpus > 0
     error_message = "request.vcpus must be greater than zero."
   }
+
+  validation {
+    condition     = contains(["regional", "zonal", "zone_redundant"], coalesce(try(var.request.placement.type, null), "regional"))
+    error_message = "request.placement.type must be regional, zonal or zone_redundant."
+  }
+
+  validation {
+    condition     = coalesce(try(var.request.placement.type, null), "regional") != "zonal" || length(coalesce(try(var.request.placement.zones, null), [])) > 0
+    error_message = "request.placement.zones must name at least one zone when type is zonal."
+  }
+}
+
+variable "sku_access" {
+  description = <<-EOT
+    Which SKU sizes this subscription may actually deploy, keyed by VM family,
+    as read from `Microsoft.Compute/skus` for the region. Access is a separate
+    gate from quota: a quota group grants neither regional nor zonal access, so
+    allocating quota for a family that cannot deploy buys a guaranteed failure.
+
+    Pass the API's fields raw. The module does the subtraction, because the
+    subtraction is where the trap is: `restricted_zones` is NOT constrained to
+    be a subset of `zones`. Standard_D1 in East US publishes zones 2 and 3 while
+    restricting 1, 2 and 3 -- reading `zones` alone says "two zones available"
+    when the answer is none.
+
+    Leave empty to skip the access check entirely. The decision then reports
+    `access.verified = false` rather than implying the check passed.
+  EOT
+
+  type = map(object({
+    sizes = map(object({
+      zones               = optional(list(string), [])
+      restricted_zones    = optional(list(string), [])
+      location_restricted = optional(bool, false)
+      restriction_reason  = optional(string)
+    }))
+  }))
+  default = {}
 }
 
 variable "pool" {

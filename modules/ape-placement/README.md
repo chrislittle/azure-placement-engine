@@ -28,6 +28,59 @@ deployed. Every decision is bounded by the regional cap, and when the cap binds,
 `writes_required` raises it first — a family limit above the regional cap is
 unusable.
 
+## Two gates, not one
+
+Quota and access fail independently and have different remedies. A quota group
+grants neither regional nor zonal access, so allocating quota for a family the
+subscription cannot deploy buys a guaranteed failure.
+
+**APE checks access; it does not manage it.** Closing an access gap is a support
+request with lead time, which no module can do. What the module does is refuse
+to allocate against a gap and say what would lift it — `NotAvailableForSubscription`
+is requestable, `QuotaId` means the offer excludes the SKU and no ticket will
+change it.
+
+### The trap in `Microsoft.Compute/skus`
+
+`locationInfo[].zones` reads like "zones you can deploy into". It is not.
+`restrictions[]` removes zones, and **the restricted set is not constrained to
+be a subset of the published set**:
+
+```
+Standard_D1, East US:
+  zones             = ["2", "3"]      <- published
+  restricted_zones  = ["1", "2", "3"] <- restricted
+  effective         = []              <- nothing deployable
+```
+
+Pass both lists raw; the module does the subtraction, because the subtraction is
+where the failure mode lives. On one live subscription, 60 of 1420 VM SKUs
+publish zones that no restriction leaves usable.
+
+### Placement type changes eligibility
+
+`request.placement.type` is not a preference — it decides which families are
+eligible at all:
+
+| type | needs |
+|---|---|
+| `regional` | no `Location` restriction |
+| `zonal` | every zone in `zones` usable for at least one size |
+| `zone_redundant` | at least `zone_count` distinct usable zones for one size |
+
+On a live subscription, `standardDFamily` is **satisfied** regionally and
+**blocked_by_access** for zone 2 — the same family, region and subscription.
+
+> **Assumption, not documented by Microsoft:** a `Zone`-type restriction blocks
+> zonal placement but leaves regional placement available. It is why the API
+> distinguishes `Zone` from `Location` at all. See
+> [`knowledge/zone-restrictions.yaml`](../../knowledge/zone-restrictions.yaml);
+> if it proves false, the regional branch in `family_deployable` is the one line
+> to change.
+
+Leave `sku_access` empty to skip the check. The decision then reports
+`access.verified = false` rather than implying it passed.
+
 ## Status values
 
 | `status` | Meaning |
@@ -36,6 +89,7 @@ unusable.
 | `needs_allocation` | A pool can cover the shortfall. Allocation is self-service and will succeed. |
 | `needs_increase` | A quota limit increase is required. Increases are **evaluated, not granted**, and are refused when regional capacity is short — this is not a promise. |
 | `blocked_by_rule` | A business rule refused it. |
+| `blocked_by_access` | No candidate family can deploy here. Quota would not help — this needs an access request, or is final if the offer excludes it. |
 | `infeasible` | No candidate family can reach the requested size. |
 
 The `needs_allocation` / `needs_increase` split is the whole point. A null

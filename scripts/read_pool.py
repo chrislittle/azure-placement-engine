@@ -1,9 +1,17 @@
-"""Project a subscription's Compute usages into the `pool` shape ape-placement wants.
+"""Project live Azure state into the `pool` and `sku_access` inputs ape-placement wants.
 
-Reads Microsoft.Compute/locations/{region}/usages, which is the fan-out read a
-rebalance needs per member subscription. `available` is deliberately left unset:
-there is no quota group behind a plain subscription, and the module must treat
-that as unproven rather than unlimited.
+Two separate reads, because they are two separate gates:
+
+  pool        Microsoft.Compute/locations/{region}/usages -- what quota exists.
+              This is also the fan-out read a rebalance needs per member
+              subscription. `available` is deliberately left unset: there is no
+              quota group behind a plain subscription, and the module must treat
+              that as unproven rather than unlimited.
+
+  sku_access  Microsoft.Compute/skus -- what this subscription may deploy.
+              Emitted raw, published zones and restricted zones side by side,
+              because the subtraction between them is decision logic and belongs
+              in the module where it is tested.
 """
 
 import json
@@ -14,11 +22,7 @@ import sys
 REGIONAL_TOTALS = {"cores", "lowprioritycores", "virtualmachines", "virtualmachinescalesets"}
 
 
-def read(subscription: str, region: str) -> dict:
-    url = (
-        f"https://management.azure.com/subscriptions/{subscription}"
-        f"/providers/Microsoft.Compute/locations/{region}/usages?api-version=2021-07-01"
-    )
+def _az(url: str) -> str:
     # On Windows `az` is az.cmd, which CreateProcess will not resolve from a
     # bare name.
     az = shutil.which("az")
@@ -28,7 +32,15 @@ def read(subscription: str, region: str) -> dict:
         [az, "rest", "--method", "get", "--url", url, "-o", "json"],
         capture_output=True, text=True, check=True,
     )
-    return json.loads(out.stdout)
+    return out.stdout
+
+
+def read(subscription: str, region: str) -> dict:
+    url = (
+        f"https://management.azure.com/subscriptions/{subscription}"
+        f"/providers/Microsoft.Compute/locations/{region}/usages?api-version=2021-07-01"
+    )
+    return json.loads(_az(url))
 
 
 def project(payload: dict) -> dict:
@@ -57,6 +69,47 @@ def project(payload: dict) -> dict:
     }
 
 
+def read_skus(subscription: str, region: str) -> dict:
+    url = (
+        f"https://management.azure.com/subscriptions/{subscription}"
+        f"/providers/Microsoft.Compute/skus?api-version=2021-07-01"
+        f"&$filter=location eq '{region}'"
+    )
+    return json.loads(_az(url))
+
+
+def project_skus(payload: dict) -> dict:
+    """Group VM SKUs by family, keeping published and restricted zones apart."""
+    families: dict = {}
+    for sku in payload.get("value", []):
+        if sku.get("resourceType") != "virtualMachines":
+            continue
+        family = sku.get("family")
+        if not family:
+            continue
+
+        zones = sorted({z for li in sku.get("locationInfo") or [] for z in li.get("zones") or []})
+        restricted, location_restricted, reason = set(), False, None
+        for r in sku.get("restrictions") or []:
+            reason = reason or r.get("reasonCode")
+            info = r.get("restrictionInfo") or {}
+            if r.get("type") == "Zone":
+                restricted |= set(info.get("zones") or [])
+            else:
+                location_restricted = True
+
+        entry = {"zones": zones, "restricted_zones": sorted(restricted)}
+        if location_restricted:
+            entry["location_restricted"] = True
+        if reason:
+            entry["restriction_reason"] = reason
+        families.setdefault(family, {"sizes": {}})["sizes"][sku["name"]] = entry
+    return families
+
+
 if __name__ == "__main__":
     sub, region = sys.argv[1], sys.argv[2]
-    print(json.dumps({"pool": project(read(sub, region))}, indent=2))
+    print(json.dumps({
+        "pool": project(read(sub, region)),
+        "sku_access": project_skus(read_skus(sub, region)),
+    }, indent=2))

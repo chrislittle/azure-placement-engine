@@ -11,6 +11,9 @@ output "decision" {
                        evaluated, not granted, and are refused when regional
                        capacity is short -- so this is NOT a promise
       blocked_by_rule  a business rule refused the request
+      blocked_by_access no candidate family can deploy here at all. A quota
+                       allocation would not help; this needs a SKU or region
+                       access request, or is final if the offer excludes it
       infeasible       no candidate family can reach the requested size
   EOT
 
@@ -34,6 +37,24 @@ output "decision" {
       headroom          = local.regional_headroom
       increase_required = local.regional_increase_required
       target            = local.regional_increase_required ? local.regional_target : var.pool.regional_cores_limit
+    }
+
+    # Access is a gate in its own right, and APE only reports on it -- closing
+    # an access gap is a support request, not something a module can do.
+    access = {
+      checked     = local.access_checked
+      verified    = local.access_checked && local.chosen != null && !contains(local.access_unverified, local.chosen)
+      placement   = local.placement_type
+      zones       = local.placement_type == "zonal" ? local.wanted_zones : []
+      zone_count  = local.wanted_zone_count
+      denied      = local.access_denied
+      unverified  = local.access_unverified
+      requestable = local.requestable
+      remediation = length(local.access_denied) == 0 ? null : (
+        local.requestable
+        ? "Raise a SKU access request for the denied families in this region."
+        : "The subscription offer excludes these SKUs; a support ticket will not lift it."
+      )
     }
 
     rule_applied = local.rule_name
