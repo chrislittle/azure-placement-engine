@@ -1,0 +1,28 @@
+{
+  "description": "Family headroom says yes and the regional cap says no; the cap is written first.",
+  "request": {
+    "region": "eastus",
+    "vcpus": 150,
+    "family": "standardDSv3Family",
+    "new_subscription": false
+  },
+  "pool": {
+    "regional_cores_limit": 100,
+    "regional_cores_used": 0,
+    "families": {
+      "standardDSv3Family": {
+        "limit": 200,
+        "used": 0,
+        "category": "GeneralPurpose",
+        "lifecycle": "current"
+      }
+    }
+  },
+  "sku_access": {},
+  "rules": [],
+  "expect": {
+    "status": "needs_increase",
+    "regional_increase_required": true,
+    "writes_required": 1
+  }
+}

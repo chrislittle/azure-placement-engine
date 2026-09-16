@@ -1,0 +1,25 @@
+{
+  "description": "Without a pool, 20 vCPUs of limit cannot reach 60 and nothing is assumed.",
+  "request": {
+    "region": "eastus",
+    "vcpus": 60,
+    "family": "standardEdsv6Family"
+  },
+  "pool": {
+    "regional_cores_limit": 500,
+    "regional_cores_used": 0,
+    "families": {
+      "standardEdsv6Family": {
+        "limit": 20,
+        "used": 0,
+        "category": "MemoryOptimized"
+      }
+    }
+  },
+  "sku_access": {},
+  "rules": [],
+  "expect": {
+    "status": "infeasible",
+    "writes_required": 0
+  }
+}

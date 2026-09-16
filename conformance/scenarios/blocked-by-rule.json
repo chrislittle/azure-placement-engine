@@ -1,0 +1,74 @@
+{
+  "description": "A business rule refuses the request outright.",
+  "request": {
+    "region": "eastus",
+    "vcpus": 32,
+    "environment": "dev"
+  },
+  "pool": {
+    "regional_cores_limit": 500,
+    "regional_cores_used": 0,
+    "families": {
+      "standardDSv5Family": {
+        "limit": 100,
+        "used": 0,
+        "category": "GeneralPurpose",
+        "architectures": [
+          "x64"
+        ]
+      },
+      "standardESv5Family": {
+        "limit": 80,
+        "used": 0,
+        "category": "MemoryOptimized",
+        "architectures": [
+          "x64"
+        ]
+      },
+      "standardDpsv6Family": {
+        "limit": 40,
+        "used": 0,
+        "category": "GeneralPurpose",
+        "architectures": [
+          "Arm64"
+        ]
+      },
+      "standardBsv2Family": {
+        "limit": 60,
+        "used": 0,
+        "category": "GeneralPurpose",
+        "burstable": true,
+        "architectures": [
+          "x64"
+        ]
+      },
+      "standardDSv3Family": {
+        "limit": 200,
+        "used": 0,
+        "category": "GeneralPurpose",
+        "lifecycle": "growth_restricted",
+        "successors": [
+          "Dv6"
+        ],
+        "architectures": [
+          "x64"
+        ]
+      }
+    }
+  },
+  "sku_access": {},
+  "rules": [
+    {
+      "name": "dev stays small",
+      "environments": [
+        "dev"
+      ],
+      "max_vcpus": 16
+    }
+  ],
+  "expect": {
+    "status": "blocked_by_rule",
+    "rule_applied": "dev stays small",
+    "writes_required": 0
+  }
+}

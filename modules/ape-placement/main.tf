@@ -151,8 +151,16 @@ locals {
   # Some regions have no availability zones at all. Telling someone to raise a
   # zone access request for one of those sends them after a ticket that cannot
   # be fulfilled -- West Central US reports 916 VM SKUs and not a single zone.
+  # Computed from PUBLISHED zones, not effective ones. Whether a region has
+  # availability zones is a property of the region; whether this subscription
+  # may use them is a restriction on top. Deriving it from effective zones made
+  # a perfectly zonal region look non-zonal as soon as every family examined was
+  # fully restricted -- and then told the customer no ticket could help, which
+  # is the opposite of the truth.
   region_zonal = anytrue(flatten([
-    for sizes in values(local.size_access) : [for sz in sizes : length(sz.effective_zones) > 0]
+    for f, sizes in var.sku_access : [
+      for name, sz in sizes.sizes : length(coalesce(sz.zones, [])) > 0
+    ]
   ]))
 
   zonal_request = local.placement_type != "regional"
@@ -249,16 +257,24 @@ locals {
     if r.satisfied_pool && (local.lifecycle_of[r.family] != "growth_restricted" || r.satisfied_now)
   ]
 
-  # Ranking. HCL has no sort-by-key, so pad the sort key into the string and
-  # split it back off.
+  # Ranking. HCL has no sort-by-key, so the sort key is padded into the string
+  # and split back off.
+  #
+  # The headroom is INVERTED for most_headroom rather than reversing the sorted
+  # list, so the tiebreak stays ascending by family name either way. Reversing
+  # the whole list reversed the name order too, which made the result differ
+  # from the PowerShell implementation whenever two families had equal headroom.
   ranked_keys = (
     local.prefer == "listed_order"
     ? [for f in local.rule_permitted : f if contains([for e in local.eligible : e.family], f)]
     : [
-      for s in(local.prefer == "most_headroom"
-        ? reverse(sort([for e in local.eligible : format("%09d|%s", e.headroom + e.grantable, e.family)]))
-        : sort([for e in local.eligible : format("%09d|%s", e.headroom + e.grantable, e.family)])
-      ) : split("|", s)[1]
+      for s in sort([
+        for e in local.eligible : format(
+          "%09d|%s",
+          local.prefer == "most_headroom" ? 999999999 - (e.headroom + e.grantable) : e.headroom + e.grantable,
+          e.family,
+        )
+      ]) : split("|", s)[1]
     ]
   )
 

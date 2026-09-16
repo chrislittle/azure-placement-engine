@@ -1,0 +1,48 @@
+{
+  "description": "Zone 2 is published as available and restricted; a zonal ask must fail.",
+  "request": {
+    "region": "eastus",
+    "vcpus": 4,
+    "family": "standardDFamily",
+    "placement": {
+      "type": "zonal",
+      "zones": [
+        "2"
+      ]
+    }
+  },
+  "pool": {
+    "regional_cores_limit": 500,
+    "regional_cores_used": 0,
+    "families": {
+      "standardDFamily": {
+        "limit": 100,
+        "used": 0,
+        "category": "GeneralPurpose"
+      }
+    }
+  },
+  "sku_access": {
+    "standardDFamily": {
+      "sizes": {
+        "Standard_D1": {
+          "zones": [
+            "2",
+            "3"
+          ],
+          "restricted_zones": [
+            "1",
+            "2",
+            "3"
+          ],
+          "restriction_reason": "NotAvailableForSubscription"
+        }
+      }
+    }
+  },
+  "rules": [],
+  "expect": {
+    "status": "blocked_by_access",
+    "requestable": true
+  }
+}

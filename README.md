@@ -17,6 +17,18 @@ Budgets and Reporting — quota is not among them, and CAF names the gap without
 filling it: *"the quota request can fail, so you should run a script to handle
 any errors."*
 
+Two paths, one set of answers:
+
+| | read | decide | apply |
+|---|---|---|---|
+| **Terraform** | `modules/ape-read` | `modules/ape-placement` | `modules/ape-apply` |
+| **Bicep** | `powershell/ApeRead.psm1` | `powershell/ApePlacement.psm1` | `bicep/ape-apply.bicep` |
+
+Bicep cannot read quota state, so on that path PowerShell reads and decides and
+Bicep only writes. The decision logic therefore exists twice, and
+[`conformance/`](conformance/) is what stops the two drifting — one set of
+scenarios both must pass.
+
 Built as **Terraform and Bicep (AVM) modules**, composed with
 [`Azure/avm-ptn-sub-vending/azurerm`](https://registry.terraform.io/modules/Azure/avm-ptn-sub-vending/azurerm/latest)
 and [`avm/ptn/lz/sub-vending`](https://github.com/Azure/bicep-registry-modules/tree/main/avm/ptn/lz/sub-vending).
@@ -35,6 +47,7 @@ superseded — see that folder's README before reading anything in it.
 - [x] `ape-read` — live quota, SKU availability and region access, all Terraform
 - [x] `ape-apply` — write quota, with the refusal semantics documented
 - [x] `examples/vending-stage-2` — the handoff contract and a sample intake
+- [x] Bicep path — PowerShell read/decide, `ape-apply.bicep` write, 23 shared scenarios
 
 ## Shape
 
@@ -73,6 +86,9 @@ headroom comes from rather than how the decision is made.
 | `modules/ape-read/` | Reads live Azure state — quota, SKUs, region access |
 | `modules/ape-placement/` | Decides. No resources, so it tests against fixtures |
 | `modules/ape-apply/` | Writes the quota a decision asked for |
+| `powershell/` | The same read and decide, for the Bicep path |
+| `bicep/` | `ape-apply.bicep` — the Bicep half of the Bicep path |
+| `conformance/` | One set of scenarios both implementations must pass |
 | `examples/vending-stage-2/` | The stage-2 pattern, with a sample intake |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
 | `docs/decisions/` | Dated architectural decisions |

@@ -1,0 +1,20 @@
+{
+  "description": "Transient, unlike an ungranted region -- this resolves on its own.",
+  "request": {
+    "region": "eastus",
+    "vcpus": 8
+  },
+  "pool": {
+    "region_accessible": false,
+    "provider_registered": false,
+    "regional_cores_limit": 0,
+    "regional_cores_used": 0,
+    "families": {}
+  },
+  "sku_access": {},
+  "rules": [],
+  "expect": {
+    "status": "not_ready",
+    "writes_required": 0
+  }
+}

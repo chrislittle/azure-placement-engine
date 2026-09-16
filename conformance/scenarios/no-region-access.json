@@ -1,0 +1,20 @@
+{
+  "description": "Nothing below the region gate matters; quota would not help.",
+  "request": {
+    "region": "germanynorth",
+    "vcpus": 8
+  },
+  "pool": {
+    "region_accessible": false,
+    "provider_registered": true,
+    "regional_cores_limit": 0,
+    "regional_cores_used": 0,
+    "families": {}
+  },
+  "sku_access": {},
+  "rules": [],
+  "expect": {
+    "status": "blocked_by_region",
+    "writes_required": 0
+  }
+}

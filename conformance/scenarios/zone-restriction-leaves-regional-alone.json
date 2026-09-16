@@ -1,0 +1,42 @@
+{
+  "description": "Confirmed by deployment: a Zone restriction does not block regional placement.",
+  "request": {
+    "region": "eastus",
+    "vcpus": 4,
+    "family": "standardDFamily"
+  },
+  "pool": {
+    "regional_cores_limit": 500,
+    "regional_cores_used": 0,
+    "families": {
+      "standardDFamily": {
+        "limit": 100,
+        "used": 0,
+        "category": "GeneralPurpose"
+      }
+    }
+  },
+  "sku_access": {
+    "standardDFamily": {
+      "sizes": {
+        "Standard_D1": {
+          "zones": [
+            "2",
+            "3"
+          ],
+          "restricted_zones": [
+            "1",
+            "2",
+            "3"
+          ],
+          "restriction_reason": "NotAvailableForSubscription"
+        }
+      }
+    }
+  },
+  "rules": [],
+  "expect": {
+    "status": "satisfied",
+    "family": "standardDFamily"
+  }
+}

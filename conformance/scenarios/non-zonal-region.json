@@ -1,0 +1,39 @@
+{
+  "description": "West Central US has 916 VM SKUs and no zones; there is no ticket for that.",
+  "request": {
+    "region": "westcentralus",
+    "vcpus": 4,
+    "placement": {
+      "type": "zonal",
+      "zones": [
+        "1"
+      ]
+    }
+  },
+  "pool": {
+    "regional_cores_limit": 500,
+    "regional_cores_used": 0,
+    "families": {
+      "standardDSv5Family": {
+        "limit": 100,
+        "used": 0,
+        "category": "GeneralPurpose"
+      }
+    }
+  },
+  "sku_access": {
+    "standardDSv5Family": {
+      "sizes": {
+        "Standard_D8s_v5": {
+          "zones": []
+        }
+      }
+    }
+  },
+  "rules": [],
+  "expect": {
+    "status": "blocked_by_access",
+    "requestable": false,
+    "region_zonal": false
+  }
+}

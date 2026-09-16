@@ -1,0 +1,44 @@
+{
+  "description": "Two usable zones cannot satisfy a three-zone spread. This path was only exercised by the live driver at first, not by any scenario -- and it was broken in PowerShell.",
+  "request": {
+    "region": "eastus",
+    "vcpus": 4,
+    "placement": {
+      "type": "zone_redundant",
+      "zone_count": 3
+    }
+  },
+  "pool": {
+    "regional_cores_limit": 500,
+    "regional_cores_used": 0,
+    "families": {
+      "standardLsv2Family": {
+        "limit": 100,
+        "used": 0,
+        "category": "StorageOptimized"
+      }
+    }
+  },
+  "sku_access": {
+    "standardLsv2Family": {
+      "sizes": {
+        "Standard_L16s_v2": {
+          "zones": [
+            "1",
+            "2",
+            "3"
+          ],
+          "restricted_zones": [
+            "3"
+          ],
+          "restriction_reason": "NotAvailableForSubscription"
+        }
+      }
+    }
+  },
+  "rules": [],
+  "expect": {
+    "status": "blocked_by_access",
+    "region_zonal": true
+  }
+}
