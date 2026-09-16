@@ -18,7 +18,7 @@ decision.json
 *.bicepparam
 !**/*.example.bicepparam
 
-# --- Python (the archived engine and scripts/) ---------------------------
+# --- Python (scripts/) ---------------------------------------------------
 __pycache__/
 *.py[cod]
 .venv/

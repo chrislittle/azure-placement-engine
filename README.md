@@ -60,9 +60,9 @@ where it slots into vending, and the GitHub Actions to wire it up.
 
 ## Status
 
-Read and decide are built and working against live subscriptions; the apply
-layer is not. The previous Python engine is in [`archive/`](archive/) and is
-superseded — see that folder's README before reading anything in it.
+Read, decide and apply are built and working against live subscriptions, in both
+Terraform and Bicep. The previous Python engine that ranked regions is
+superseded and preserved at the `v0-advisory-engine` tag.
 
 - [x] `ape-placement` — decides. 40 tests, no subscription needed
 - [x] `ape-read` — live quota, SKU availability and region access, all Terraform
@@ -115,7 +115,6 @@ headroom comes from rather than how the decision is made.
 | `examples/vending-stage-2/` | The stage-2 pattern, with a sample intake |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
 | `docs/decisions/` | Dated architectural decisions |
-| `archive/` | Superseded work. Not current. |
 
 ## Known constraints
 
