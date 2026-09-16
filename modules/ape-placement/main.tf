@@ -10,9 +10,11 @@ locals {
     for r in var.rules : r
     if r.environments == null ? true : contains(r.environments, var.request.environment)
   ]
-  rule      = length(local.matching_rules) > 0 ? local.matching_rules[0] : null
-  rule_name = local.rule == null ? "(none)" : local.rule.name
-  prefer    = local.rule == null ? "most_headroom" : coalesce(local.rule.prefer, "most_headroom")
+  rule           = length(local.matching_rules) > 0 ? local.matching_rules[0] : null
+  rule_name      = try(local.rule.name, "(none)")
+  prefer         = try(coalesce(local.rule.prefer, "most_headroom"), "most_headroom")
+  rule_allowlist = try(local.rule.family_allowlist, null)
+  rule_denylist  = try(local.rule.family_denylist, null)
 
   # The region-wide cap bounds every family beneath it. Ranking on family
   # headroom alone invents capacity that does not exist, because family limits
@@ -66,15 +68,15 @@ locals {
   # "listed" has to mean the order the rule listed -- filtering the other way
   # round silently substitutes whatever order the pool happened to enumerate in.
   rule_allowed = (
-    local.rule == null || local.rule.family_allowlist == null
+    local.rule_allowlist == null
     ? local.requested_families
-    : [for f in local.rule.family_allowlist : f if contains(local.requested_families, f)]
+    : [for f in local.rule_allowlist : f if contains(local.requested_families, f)]
   )
 
   rule_permitted = (
-    local.rule == null || local.rule.family_denylist == null
+    local.rule_denylist == null
     ? local.rule_allowed
-    : [for f in local.rule_allowed : f if !contains(local.rule.family_denylist, f)]
+    : [for f in local.rule_allowed : f if !contains(local.rule_denylist, f)]
   )
 
   # A family the pool has never heard of cannot be reasoned about. Kept
@@ -203,14 +205,16 @@ locals {
     for f in local.lifecycle_permitted : f if !contains(keys(local.size_access), f)
   ]
 
+  # try() rather than a contains() guard: `&&` does not short-circuit, so the
+  # index is evaluated even when the family is absent from the SKU data.
+  # Absent means not offered, which is neither permitted nor denied -- it is
+  # reported separately as not_offered.
   access_permitted = !local.access_checked ? local.lifecycle_permitted : [
-    for f in local.lifecycle_permitted : f
-    if contains(keys(local.size_access), f) && local.family_deployable[f]
+    for f in local.lifecycle_permitted : f if try(local.family_deployable[f], false)
   ]
 
   access_denied = !local.access_checked ? [] : [
-    for f in local.lifecycle_permitted : f
-    if contains(keys(local.size_access), f) && !local.family_deployable[f]
+    for f in local.lifecycle_permitted : f if !try(local.family_deployable[f], true)
   ]
 
   # Only meaningful when the check was skipped entirely. With SKU data present,
@@ -245,7 +249,7 @@ locals {
     })
   ]
 
-  rule_cap = local.rule == null ? null : local.rule.max_vcpus
+  rule_cap = try(local.rule.max_vcpus, null)
   # A conditional, not `&&`: Terraform type checks both sides of `&&`, so
   # comparing against a null rule_cap fails even when the guard is false.
   over_rule_cap = local.rule_cap == null ? false : var.request.vcpus > local.rule_cap
