@@ -25,7 +25,7 @@ superseded — see that folder's README before reading anything in it.
 
 - [x] `ape-placement` — decides. 40 tests, no subscription needed
 - [x] `ape-read` — live quota, SKU availability and region access, all Terraform
-- [ ] `ape-apply` — write quota, poll, branch on the three outcomes
+- [x] `ape-apply` — write quota, with the refusal semantics documented
 - [ ] `ape-vending` — compose with `avm-ptn-sub-vending`
 
 ## Shape
@@ -64,6 +64,7 @@ headroom comes from rather than how the decision is made.
 |---|---|
 | `modules/ape-read/` | Reads live Azure state — quota, SKUs, region access |
 | `modules/ape-placement/` | Decides. No resources, so it tests against fixtures |
+| `modules/ape-apply/` | Writes the quota a decision asked for |
 | `examples/end-to-end/` | Both wired together against a real subscription |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
 | `docs/decisions/` | Dated architectural decisions |

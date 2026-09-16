@@ -45,6 +45,23 @@ module "placement" {
   ]
 }
 
+# Writing is off by default here so the example can be run against a real
+# subscription without changing anything. Set apply_writes = true to let it.
+variable "apply_writes" {
+  type    = bool
+  default = false
+}
+
+module "apply" {
+  source = "../../modules/ape-apply"
+
+  subscription_id = var.subscription_id
+  region          = var.region
+  writes_required = module.placement.writes_required
+  enabled         = var.apply_writes
+}
+
+output "applied" { value = module.apply.applied }
 output "status" { value = module.placement.decision.status }
 output "reason" { value = module.placement.decision.reason }
 output "family" { value = module.placement.decision.family }

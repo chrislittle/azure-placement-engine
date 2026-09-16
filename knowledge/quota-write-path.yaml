@@ -45,6 +45,20 @@ outcomes:
       outcome APE must handle, because it is indistinguishable from success at
       submission time.
 
+  evaluated_then_refused_capacity:
+    http: 202, then provisioningState Failed
+    code: QuotaNotAvailableForResource
+    observed: >
+      standardDav6Family 10 -> 20 AND 10 -> 12 in eastus, both refused. A
+      current-generation v6 family under no lifecycle restriction, and the
+      smaller ask fared no better -- so the refusal is about the subscription,
+      not the size of the request. This PayAsYouGo subscription simply cannot
+      grow quota in that region.
+    note: >
+      Distinct from ContactSupport, and the distinction matters: ContactSupport
+      says a ticket is the remaining route, this says capacity is not there.
+      Neither is retryable by re-running.
+
   structurally_refused:
     http: 400
     code: DeprecatedQuotaType
@@ -75,8 +89,20 @@ implications:
     (raise a ticket) from DeprecatedQuotaType (choose a different family, and
     the replacements are in the error message).
   - >
-    Sub-minute latency means this is not a background job, but it is also not
-    synchronous. Terraform will need to wait on the LRO.
+    Sub-minute latency is not reliable. The same operation resolved in about 35
+    seconds via REST and took 95 seconds through Terraform, so any timeout has
+    to be generous.
+  - >
+    azapi handles the long-running operation correctly -- it polls
+    operationsStatus to completion and surfaces the final error. No custom
+    polling needed. But a refused write FAILS THE APPLY, and Terraform has no
+    way to catch a resource error, so this cannot be turned into a warning.
+
+# At least three distinct refusal codes, none retryable:
+#   ContactSupport                 self-service exhausted, raise a ticket
+#   QuotaNotAvailableForResource   capacity is not there for this subscription
+#   DeprecatedQuotaType            family is growth-restricted; 400, immediate
+refusal_codes: [ContactSupport, QuotaNotAvailableForResource, DeprecatedQuotaType]
 
 # Composition with vending, checked 2026-09-16 against
 # Azure/terraform-azure-avm-ptn-alz-sub-vending.
