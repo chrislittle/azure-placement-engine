@@ -10,8 +10,10 @@ vCPU quota, choosing a VM family when the customer has not fixed one, and
 enforcing the platform team's business rules about who gets what.
 
 Built as **Terraform and Bicep (AVM) modules**, composed with
-[`Azure/lz-vending/azurerm`](https://registry.terraform.io/modules/Azure/lz-vending/azurerm/latest)
+[`Azure/avm-ptn-sub-vending/azurerm`](https://registry.terraform.io/modules/Azure/avm-ptn-sub-vending/azurerm/latest)
 and [`avm/ptn/lz/sub-vending`](https://github.com/Azure/bicep-registry-modules/tree/main/avm/ptn/lz/sub-vending).
+Neither does anything with quota today, which is the gap this fills.
+(`Azure/lz-vending/azurerm` is archived — it migrated to the AVM module above.)
 There is no service and no state of its own — Azure's own APIs are the source of
 truth, and the modules read, decide, and write.
 
@@ -30,6 +32,11 @@ Three layers, deliberately kept distinct:
 | **Quota pool** | `Microsoft.Quota/groupQuotas` | The right to ask. Costs nothing, guarantees nothing. Allocating from the group to a subscription is fast; raising the group limit is not. |
 | **Capacity buffer** *(later)* | `Microsoft.Compute/capacityReservationGroups` | Held, guaranteed hardware. Costs money while idle. Declared by the customer, not sized by the tool. |
 | **Vended subscription** | | The consumer. |
+
+The pool stack owns the allocation table; vending stacks only read it. A
+**rebalance** — harvesting quota that member subscriptions hold but do not use,
+and redistributing it — is not a separate lifecycle, it is what the pool stack
+does when applied with updated floors and demands.
 
 The decision module holds **no resources** — inputs to outputs, so it is testable
 with fixtures and no subscription. Reading pool state, deciding, and writing are

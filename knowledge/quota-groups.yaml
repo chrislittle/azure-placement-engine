@@ -131,9 +131,27 @@ iac_support:
     how-to docs use. Pin deliberately and expect churn.
   request_shaped_warning: >
     Allocation is modelled as quotaAllocation*Requests*, not as a desired-state
-    resource. The `limit` in the body is absolute, but Terraform sees a request
-    object rather than the allocation itself, so update and replace semantics
-    need proving before the module design leans on them.
+    resource, and the published azapi schema carries NO body at all -- only
+    name, parent_id and type. A request object with no readable desired state
+    is something Terraform cannot diff, so the write behaves as fire-and-forget
+    rather than as converging state.
+  allocation_pattern: >
+    The workable shape is therefore read-compare-write rather than plain desired
+    state: a data source GETs the current quotaAllocations for the region, the
+    decision module computes the target limits, and the write is issued only
+    where the two differ. Deterministic and expressible, but not idiomatic
+    Terraform, and worth prototyping before the rest is built on it.
+
+# Nobody has built this yet, in either toolchain.
+ecosystem:
+  avm: no quota-group module exists, Bicep or Terraform
+  vending: >
+    Azure/terraform-azurerm-lz-vending is ARCHIVED and migrated to
+    Azure/avm-ptn-sub-vending/azurerm. Neither it nor the Bicep
+    avm/ptn/lz/sub-vending does anything with quota -- confirmed against the
+    module's own feature list, which covers subscription creation, MG placement,
+    networking, role assignments, RP registration, resource groups, managed
+    identities, NSGs, route tables and budgets. Quota is simply absent.
 
 # Harvesting idle quota is self-service and is the most useful thing APE can do
 # with this feature. It is also taking cores from a subscription someone else
