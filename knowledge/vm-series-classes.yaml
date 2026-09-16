@@ -23,9 +23,9 @@ derived:
   ratio:
     rule: median MemoryGB / vCPUs across the family's sizes
     bands:
-      compute_optimized: < 3      # F8s_v2 = 2.0
-      general_purpose: 3 to 6     # D8s_v5 = 4.0
-      memory_optimized: > 6       # E8s_v5 = 8.0
+      compute_optimized: "< 3"    # F8s_v2 = 2.0
+      general_purpose: "3 to 6"   # D8s_v5 = 4.0
+      memory_optimized: "> 6"     # E8s_v5 = 8.0
     note: >
       Crisp for the main axis. The three probes above sit exactly on 2, 4 and 8.
 

@@ -19,9 +19,14 @@ truth, and the modules read, decide, and write.
 
 ## Status
 
-**Design in progress. No implementation yet.** The previous Python engine is in
-[`archive/`](archive/) and is superseded — see that folder's README before
-reading anything in it.
+Read and decide are built and working against live subscriptions; the apply
+layer is not. The previous Python engine is in [`archive/`](archive/) and is
+superseded — see that folder's README before reading anything in it.
+
+- [x] `ape-placement` — decides. 40 tests, no subscription needed
+- [x] `ape-read` — live quota, SKU availability and region access, all Terraform
+- [ ] `ape-apply` — write quota, poll, branch on the three outcomes
+- [ ] `ape-vending` — compose with `avm-ptn-sub-vending`
 
 ## Shape
 
@@ -57,6 +62,9 @@ headroom comes from rather than how the decision is made.
 
 | Path | What |
 |---|---|
+| `modules/ape-read/` | Reads live Azure state — quota, SKUs, region access |
+| `modules/ape-placement/` | Decides. No resources, so it tests against fixtures |
+| `examples/end-to-end/` | Both wired together against a real subscription |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
 | `docs/decisions/` | Dated architectural decisions |
 | `archive/` | Superseded work. Not current. |
