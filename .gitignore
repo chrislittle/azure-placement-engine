@@ -26,6 +26,14 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
+# --- Agent / assistant context -------------------------------------------
+# Working notes for coding agents. Useful locally, not part of the published
+# project.
+CLAUDE.md
+.claude/
+AGENTS.md
+.cursorrules
+
 # --- Editors and OS ------------------------------------------------------
 .vscode/
 .idea/
