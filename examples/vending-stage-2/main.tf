@@ -42,8 +42,8 @@ variable "apply_writes" {
 }
 
 locals {
-request_doc= yamldecode(file("${path.module}/${var.request_file}"))
-  compute = local.request_doc.compute
+  request_doc = yamldecode(file("${path.module}/${var.request_file}"))
+  compute     = local.request_doc.compute
 
   request = {
     region                 = local.compute.region
@@ -76,7 +76,7 @@ module "placement" {
   source = "../../modules/ape-placement"
 
   request    = local.request
-  quota       = module.read.quota
+  quota      = module.read.quota
   sku_access = module.read.sku_access
 
   # Business rules the platform team owns, not the customer. First match wins.

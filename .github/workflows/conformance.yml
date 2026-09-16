@@ -28,14 +28,21 @@ permissions:
 
 jobs:
   terraform:
-    name: Terraform — unit tests and scenarios
+    # Both ends of the supported range. The floor catches code that relies on
+    # newer behaviour; latest catches deprecations. Testing only one of them has
+    # let real defects through in both directions.
+    name: Terraform ${{ matrix.terraform }} — unit tests and scenarios
     runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform: ["1.9.8", "latest"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
 
       - name: Formatting

@@ -1,3 +1,9 @@
+terraform {
+  # 1.9 is the floor CI gates on. Below it, `&&` and `||` short-circuiting and
+  # coalesce() with empty collections behave differently.
+  required_version = ">= 1.9"
+}
+
 # The decision. No resources live here: this module reads a request, the quota
 # state its caller fetched, and the platform team's rules, and returns what
 # should happen. Applying it is somebody else's job, which is what makes it

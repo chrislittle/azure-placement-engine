@@ -75,7 +75,7 @@ Two stages give three more benefits:
 
 | Path | Needs |
 |---|---|
-| Terraform | Terraform >= 1.9 (CI gates on 1.9.8), `Azure/azapi` provider >= 2.0 |
+| Terraform | Terraform >= 1.9. CI tests 1.9.8 and the current release. `Azure/azapi` provider >= 2.0. |
 | Bicep | PowerShell 7+, `Az.Accounts`, `powershell-yaml`, Bicep CLI |
 
 ### Permissions
