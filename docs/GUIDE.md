@@ -4,15 +4,16 @@ How to run it, what its answers mean, and where it fits in a subscription
 vending pipeline.
 
 - [Who does what](#who-does-what)
-- [A complete example](#a-complete-example)
+- [Step by step](#step-by-step)
+- [What the answer looks like](#what-the-answer-looks-like)
 - [Where AQV fits](#where-aqv-fits)
 - [Prerequisites](#prerequisites)
 - [The subscription request](#the-subscription-request)
-- [Quickstart: Terraform](#quickstart-terraform)
-- [Quickstart: Bicep](#quickstart-bicep)
-- [Business rules — reference](#business-rules-reference)
+- [Using the modules directly](#using-the-modules-directly)
+- [Business rules reference](#business-rules-reference)
 - [Reading a decision](#reading-a-decision)
 - [GitHub Actions](#github-actions)
+- [Why Bicep works differently](#why-bicep-works-differently)
 - [Azure behaviour to know](#azure-behaviour-to-know)
 - [Not covered yet](#not-covered-yet)
 
@@ -20,107 +21,250 @@ vending pipeline.
 
 ## Who does what
 
-Three steps, two teams. Each owns different files and needs different rights.
+The application team fills in a form. They do not write YAML, and they do not
+have access to the platform repository.
 
-| | Application team | Platform team |
-|---|---|---|
-| **Writes** | `request.yaml`, one per subscription | `rules.yaml`, one per platform |
-| **Runs** | Nothing required. Optionally the read-only query. | Stage 2, from a pipeline. |
-| **Needs** | `Reader`, and only for the optional query. | `Reader` and `Quota Request Operator`. |
-| **Receives** | A subscription with quota, and the family to deploy into. | The decision, and why each family lost. |
-| **Then does** | Deploys the workload. AQV does not. | Hands the subscription over. |
+Everything else belongs to the platform team: the form, the automation behind
+it, both YAML files, and the pipelines.
 
 ```mermaid
 flowchart TB
-    subgraph L1["STEP 1 · REQUEST"]
+    subgraph APP["APPLICATION TEAM"]
+        F["Fills in the intake form<br/><i>ITSM ticket, Power App, web form</i>"]
+        DEP["Later: deploys the workload<br/>into the family AQV chose"]
+    end
+
+    subgraph PLATREPO["PLATFORM TEAM · source control"]
+        RP["<b>Request pipeline</b><br/>turns the form into a file<br/>opens a pull request"]
+        RY["<code>requests/payments-api.yaml</code><br/><i>generated, one per subscription</i>"]
+        RU["<code>platform/rules.yaml</code><br/><i>hand-written, one per platform</i>"]
+        REV["Pull request review<br/><i>platform team approves</i>"]
+    end
+
+    subgraph PIPE["PLATFORM TEAM · deployment pipeline"]
         direction LR
-        A1["<b>Application team</b><br/>writes <code>request.yaml</code><br/>one per subscription"]
-        A2["<b>Platform team</b><br/>writes <code>rules.yaml</code><br/>one per platform"]
+        S1["<b>Stage 1</b><br/>avm-ptn-sub-vending"]
+        S2["<b>Stage 2</b><br/>aqv-read → aqv-decide → aqv-apply"]
+        S1 -->|subscription_id| S2
     end
 
-    subgraph L2["STEP 2 · VEND &nbsp;·&nbsp; platform team"]
-        B1["<b>avm-ptn-sub-vending</b><br/>creates the subscription<br/>identity · governance · networking · budgets"]
-    end
-
-    subgraph L3["STEP 3 · QUOTA &nbsp;·&nbsp; platform team &nbsp;·&nbsp; this repository"]
-        direction LR
-        C1["<b>aqv-read</b><br/>quota · SKUs · access<br/><i>Reader</i>"]
-        C2["<b>aqv-decide</b><br/>which family<br/>what limit<br/><i>no Azure access</i>"]
-        C3["<b>aqv-apply</b><br/>writes the quota<br/><i>Quota Request Operator</i>"]
-        C1 --> C2 --> C3
-    end
-
-    subgraph L4["STEP 4 · DEPLOY &nbsp;·&nbsp; application team"]
-        B2["Deploys the workload into the family AQV chose<br/><i>AQV deploys nothing</i>"]
-    end
-
-    L1 -->|"both files"| L2
-    L2 -->|"subscription_id"| L3
-    L3 -->|"family name, quota set"| L4
+    F --> RP --> RY --> REV
+    REV -->|merge triggers| PIPE
+    RU --> PIPE
+    S2 -->|"family name, quota set"| DEP
 ```
 
-The two files never mix. A request says what the workload needs. The rules say
-what the platform permits. Neither team edits the other's file.
+### The boundary
+
+| | Application team | Platform team |
+|---|---|---|
+| **Touches** | The intake form only. | The form, the pipelines, both YAML files. |
+| **Writes YAML** | No. The request pipeline generates it. | Yes, `rules.yaml`, by hand. |
+| **Repository access** | None required. | Owns it. |
+| **Azure rights** | None required. Optionally `Reader` on their own subscription. | `Reader` and `Quota Request Operator`. |
+| **Receives** | A subscription with quota, and the family to deploy into. | The decision, and why each family lost. |
+
+### What the form asks, and what it becomes
+
+The platform team designs the form. These are the questions that produce the
+`compute:` block. Phrase them for someone who does not know Azure VM families.
+
+| Ask the application team | Becomes | Example |
+|---|---|---|
+| Which Azure region? | `compute.region` | `eastus` |
+| How many vCPUs in total? | `compute.vcpus` | `64` |
+| What kind of workload? *(pick one)* | `compute.category` | Memory-heavy → `MemoryOptimized` |
+| Must it survive a datacentre failure? | `compute.placement` | Yes → `zone_redundant` |
+| Does it need Arm? | `compute.architecture` | No → `x64` |
+| Production or DevTest? | `subscription.environment` | `prod` — selects which rule applies |
+
+Nobody is asked to name a VM family. That is what AQV works out.
+
+### Where the files sit
+
+```
+platform-repo/
+├── platform/
+│   └── rules.yaml                    hand-written, one per platform
+├── requests/
+│   ├── payments-api.yaml             generated by the request pipeline
+│   └── reporting-service.yaml        one file per subscription
+└── .github/workflows/
+    ├── vend-stage-2-terraform.yml
+    └── conformance.yml
+```
+
+Both files are read by the deployment pipeline. Neither is read by Azure.
 
 ---
 
-## A complete example
+## Step by step
 
-Everything in one place: two files, one command, the answer.
-Both files are in [`examples/vending-stage-2`](../examples/vending-stage-2).
+From nothing to a real answer. Steps 1 to 5 write nothing to Azure.
 
-### 1. The application team writes the request
+### 1. Get the modules
 
-`request.yaml`, one per subscription. Only the `compute:` block matters to AQV;
-the rest is the vending parameter file it lives inside.
+Copy this repository into your platform repository, or reference it directly.
 
-```yaml
+```bash
+git clone https://github.com/chrislittle/azure-quota-vending.git
+cd azure-quota-vending
+```
+
+### 2. Write your rules
+
+One file for the whole platform. Start minimal and add rules later.
+
+```bash
+mkdir -p platform
+cat > platform/rules.yaml <<'YAML'
+rules:
+  - name: devtest stays small
+    environments: [devtest]
+    max_vcpus: 32
+
+  - name: default
+    max_vcpus: 128
+YAML
+```
+
+[`examples/vending-stage-2/rules.example.yaml`](../examples/vending-stage-2/rules.example.yaml)
+shows the richer version, with allowlists and ordering.
+
+Rules are evaluated in order. The first match wins. Put a rule with no
+`environments` last, so it catches everything else.
+
+### 3. Create a request
+
+In production the request pipeline generates this from the intake form. To try
+it by hand:
+
+```bash
+mkdir -p requests
+cat > requests/my-app.yaml <<'YAML'
 subscription:
-  environment: prod            # selects which rule applies
+  environment: prod
 
 compute:
   region: eastus
-  vcpus: 64
-  category: MemoryOptimized
-  architecture: x64
-  placement:
-    type: zone_redundant
-    zone_count: 3
+  vcpus: 8
+  category: GeneralPurpose
+YAML
 ```
 
-### 2. The platform team writes the rules
+Ask for a size the subscription can actually reach. A new subscription often has
+a regional cap of 10 vCPUs, so start small and confirm the mechanics before
+asking for more.
 
-`rules.yaml`, one per platform. The application team never sees this.
+### 4. Ask what the subscription can do — no write access needed
 
-```yaml
-rules:
-  - name: devtest stays off GPU and stays small
-    environments: [devtest]
-    family_denylist: [standardNCSv3Family, standardNVSv4Family]
-    max_vcpus: 32
+Before wiring anything up, check the answer by hand. This needs only `Reader`.
 
-  - name: production uses approved families, cheapest first
-    environments: [prod]
-    family_allowlist: [standardDsv6Family, standardDdsv6Family, standardEsv6Family]
-    prefer: listed_order
-
-  - name: default            # no environments, so it catches the rest
-    max_vcpus: 128
+```bash
+cd examples/what-can-i-deploy
+terraform init
+terraform apply -var subscription_id=$SUB -var region=eastus -var vcpus=8
 ```
 
-### 3. The platform team runs stage 2
+```powershell
+# or, without Terraform
+./Get-WhatCanIDeploy.ps1 -SubscriptionId $sub -Region eastus -VCpus 8
+```
+
+You will get back a family name, or a reason why not. Nothing is written.
+
+### 5. Run stage 2 without writing
 
 ```bash
 cd examples/vending-stage-2
 terraform init
-terraform apply -var subscription_id=$SUB
+terraform apply   -var subscription_id=$SUB   -var request_file=../../requests/my-app.yaml   -var rules_file=../../platform/rules.yaml
 ```
 
-Writes are off by default. Add `-var apply_writes=true` to let it set the quota.
+`apply_writes` defaults to false, so this shows the decision and writes nothing.
 
-### 4. The answer
+```text
+status      : satisfied
+reason      : existing quota covers the request
+rule applied: default
+family      : StandardDadsv7Family
+writes      : 0
+```
 
-The request said `environment: prod`, so the second rule applied:
+`satisfied` with no writes means the quota is already there. Stop here if that is
+all you needed. Steps 6 to 9 matter when the answer is `needs_increase` or
+`needs_allocation`, because then something has to be written.
+
+### 6. Grant the pipeline identity its rights
+
+Only now does anything need write access. Two roles on the target subscription:
+
+```bash
+APP_ID=$(az ad app create --display-name aqv-pipeline --query appId -o tsv)
+az ad sp create --id "$APP_ID"
+
+az role assignment create --assignee "$APP_ID"   --role "Reader" --scope "/subscriptions/$SUB"
+
+az role assignment create --assignee "$APP_ID"   --role "Quota Request Operator" --scope "/subscriptions/$SUB"
+```
+
+`Quota Request Operator` is the built-in role that carries
+`Microsoft.Quota/quotas/write`. Contributor also works and grants far more.
+
+### 7. Let GitHub Actions use that identity
+
+A federated credential, so no secret is stored:
+
+```bash
+az ad app federated-credential create --id "$APP_ID" --parameters '{
+  "name": "aqv-main",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:YOUR-ORG/YOUR-REPO:ref:refs/heads/main",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+```
+
+Then set the two repository variables the workflows read:
+
+```bash
+gh variable set AZURE_CLIENT_ID --body "$APP_ID"
+gh variable set AZURE_TENANT_ID --body "$(az account show --query tenantId -o tsv)"
+```
+
+### 8. Add the workflow
+
+```bash
+cp .github/workflows/vend-stage-2-terraform.yml YOUR-REPO/.github/workflows/
+```
+
+Run it from the Actions tab, or call it from your stage 1 workflow:
+
+```yaml
+  stage-2-quota:
+    needs: stage-1-vending
+    uses: ./.github/workflows/vend-stage-2-terraform.yml
+    with:
+      subscription_id: ${{ needs.stage-1-vending.outputs.subscription_id }}
+      request_file: requests/my-app.yaml
+      apply_writes: true
+```
+
+### 9. Let it write
+
+```bash
+terraform apply -var subscription_id=$SUB -var apply_writes=true
+```
+
+A refused quota write fails the run on purpose. See
+[Reading a decision](#reading-a-decision) for what each refusal means.
+
+---
+
+## What the answer looks like
+
+Real output, from a PayAsYouGo subscription with a regional cap of 10 vCPUs.
+
+The request said `environment: prod`, so the production rule applied:
 
 ```text
 status      : infeasible
@@ -129,7 +273,7 @@ rule applied: production uses approved families, cheapest first
 ```
 
 That subscription holds no quota for any family on the production allowlist. The
-rule did its job: it refused rather than silently choosing something the platform
+rule did its job. It refused rather than quietly choosing something the platform
 had not approved.
 
 Change the request to `environment: devtest` and the first rule applies instead:
@@ -142,15 +286,7 @@ rule applied: devtest stays off GPU and stays small
 
 The request asked for 64 vCPUs. The devtest rule caps it at 32.
 
-Both are real output from a PayAsYouGo subscription. Neither wrote anything.
-
-### What the application team gets
-
-The chosen family, and a subscription with the quota for it. They deploy the
-workload themselves. They can also re-ask at any time with only `Reader`, using
-[`examples/what-can-i-deploy`](../examples/what-can-i-deploy).
-
----
+Neither run wrote anything.
 
 ## Where AQV fits
 
@@ -307,101 +443,66 @@ shows the `compute:` block inside a complete parameter file.
 
 ---
 
-## Quickstart: Terraform
+## Using the modules directly
 
-```bash
-cd examples/vending-stage-2
-terraform init
+[Step by step](#step-by-step) covers the normal path. This is for wiring the
+modules into something of your own.
 
-terraform apply \
-  -var subscription_id="$(terraform -chdir=../stage-1 output -raw subscription_id)"
-```
-
-Writes are **off by default** so the decision can be reviewed. To let it write:
-
-```bash
-terraform apply -var subscription_id="$SUB" -var apply_writes=true
-```
-
-### Using the modules directly
+### Terraform
 
 ```hcl
 module "read" {
-  source          = "../../modules/aqv-read"
+  source          = "./modules/aqv-read"
   subscription_id = var.subscription_id
   region          = local.compute.region
 }
 
-module "placement" {
-  source     = "../../modules/aqv-decide"
+module "decide" {
+  source     = "./modules/aqv-decide"
   request    = local.request
-  quota       = module.read.quota
+  quota      = module.read.quota
   sku_access = module.read.sku_access
-  rules      = var.placement_rules
+  rules      = local.rules
 }
 
 module "apply" {
-  source          = "../../modules/aqv-apply"
+  source          = "./modules/aqv-apply"
   subscription_id = var.subscription_id
   region          = local.compute.region
-  writes_required = module.placement.writes_required
+  writes_required = module.decide.writes_required
   enabled         = var.apply_writes
 }
 ```
 
-> **Consuming `aqv-read` from outside this repo:** it reads the curated lists
-> from `knowledge/` by a path relative to itself. A non-local module source
-> makes Terraform copy the module into `.terraform/modules`, which breaks that
-> path. Set `knowledge_dir` explicitly when that happens.
+> `aqv-read` reads `knowledge/` by a path relative to itself. A non-local module
+> source makes Terraform copy the module into `.terraform/modules`, which breaks
+> that path. Set `knowledge_dir` when that happens.
 
----
-
-## Quickstart: Bicep
-
-```bash
-pwsh -File examples/vending-stage-2-bicep/Invoke-AqvVending.ps1 \
-  -SubscriptionId $SUB
-```
-
-Evaluates the decision and writes `aqv-apply.bicepparam`. Nothing is deployed.
-Add `-Deploy` to apply it.
-
-Bicep cannot read quota state. On this path PowerShell does the read and the
-decision. Bicep does the write.
-
-```mermaid
-flowchart LR
-    T1[aqv-read] --> T2[aqv-decide] --> T3[aqv-apply]
-    B1[AqvRead.psm1] --> B2[AqvDecide.psm1] --> B3[aqv-apply.bicepparam] --> B4[aqv-apply.bicep]
-```
-
-The top row is Terraform. The bottom row is the Bicep path. PowerShell does the
-read and the decision. Bicep does only the write.
-
-Both rows must give the same answer. The scenarios in `conformance/scenarios`
-test each one.
-
-The script forms no opinion of its own. It serialises `writes_required`
-unchanged, so Bicep receives exactly what the Terraform module would have
-applied.
-
-### Using the PowerShell modules directly
+### PowerShell, for the Bicep path
 
 ```powershell
 Import-Module ./powershell/AqvRead.psm1
 Import-Module ./powershell/AqvDecide.psm1
 
-$state = Get-AqvState -SubscriptionId $sub -Region eastus
+$state    = Get-AqvState -SubscriptionId $sub -Region eastus
 $decision = Get-AqvDecision -Request $request -Quota $state.quota `
-    -SkuAccess $state.sku_access -Rules $rules
+                -SkuAccess $state.sku_access -Rules $rules
 ```
 
----
+`$decision.writes_required` is the shape
+[`bicep/aqv-apply.bicep`](../bicep/aqv-apply.bicep) takes. Serialise it to a
+`.bicepparam` and deploy that;
+[`examples/vending-stage-2-bicep`](../examples/vending-stage-2-bicep) does
+exactly this.
 
-## Business rules — reference
+Bicep cannot read quota state, so the read and the decision happen in PowerShell
+and Bicep only writes. See
+[Why Bicep works differently](#why-bicep-works-differently).
+
+## Business rules reference
 
 Rules live in `rules.yaml`, owned by the platform team. See
-[A complete example](#a-complete-example) for the file in context.
+[Step by step](#step-by-step) for the file in context.
 
 Rules are evaluated in order. The first rule whose `environments` matches is the
 one that applies. A rule with no `environments` matches every request, so place
@@ -603,6 +704,38 @@ rejected. Review it in the pull request before anything is written.
 | New subscriptions cannot deploy the 30 growth-restricted series at all. | This is not a limit on growth. It is a block on deployment. |
 | A `202` from a quota PUT means Azure accepted the request for review. | It is not an approval. Poll for the result. |
 | `isQuotaApplicable` can return `true` for a family whose write is then refused. | Do not use it as a pre-check. |
+
+## Why Bicep works differently
+
+Bicep cannot read the state AQV needs. Two limits cause this.
+
+`existing` requires a known resource ID. It fails the whole deployment with
+`NotFound` when the resource is absent, and there is no way to catch that. AQV
+must report a missing region grant as an answer, not as a crash.
+
+`deploymentScripts` is idempotent. It does not run again on redeploy unless one
+of its properties changes, so a quota read would keep its first value. The usual
+fix is to add a timestamp, which shows it is not a data source. It also needs a
+storage account, a container instance and a managed identity.
+
+Bicep extensibility does not change this. It deploys to targets outside the ARM
+control plane, such as Kubernetes and Microsoft Graph. It is not a query
+mechanism.
+
+Three public approaches confirm the pattern. Each puts the read somewhere other
+than Bicep.
+
+| Approach | Where the read happens |
+|---|---|
+| Capacity fixed in the template, or chosen by branch | Nowhere. A person decides. |
+| PowerShell runbook in an Automation Account | The runbook. |
+| Bicep deploys a Logic App that queries quota | The Logic App. |
+
+Azure Verified Modules does not require both languages. It keeps separate
+specifications for Bicep and Terraform.
+
+The cost of two implementations is drift. [`conformance/`](../conformance)
+holds one set of scenarios. Both implementations must pass all of them.
 
 ## Not covered yet
 
