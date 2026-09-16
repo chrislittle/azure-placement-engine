@@ -8,7 +8,7 @@ locals {
   # so an unconditional catch-all belongs last.
   matching_rules = [
     for r in var.rules : r
-    if r.environments == null || contains(r.environments, var.request.environment)
+    if r.environments == null ? true : contains(r.environments, var.request.environment)
   ]
   rule      = length(local.matching_rules) > 0 ? local.matching_rules[0] : null
   rule_name = local.rule == null ? "(none)" : local.rule.name
@@ -40,7 +40,7 @@ locals {
   attribute_matched = sort([
     for f, d in var.pool.families : f
     if(local.wanted_category == null || d.category == local.wanted_category)
-    && (local.want_arch == null || contains(coalesce(d.architectures, []), local.want_arch))
+    && (local.want_arch == null ? true : contains(try(d.architectures, []), local.want_arch))
     && (local.want_burstable == null || coalesce(d.burstable, false) == (local.want_burstable == "Required"))
     && (local.want_confidential == null || coalesce(d.confidential_computing, false) == (local.want_confidential == "Required"))
   ])
@@ -140,8 +140,8 @@ locals {
         name   = name
         reason = sz.restriction_reason
         effective_zones = sz.location_restricted ? [] : sort(tolist(setsubtract(
-          toset(coalesce(sz.zones, [])),
-          toset(coalesce(sz.restricted_zones, [])),
+          toset(try(sz.zones, [])),
+          toset(try(sz.restricted_zones, [])),
         )))
         location_restricted = sz.location_restricted
       }
@@ -159,7 +159,7 @@ locals {
   # is the opposite of the truth.
   region_zonal = anytrue(flatten([
     for f, sizes in var.sku_access : [
-      for name, sz in sizes.sizes : length(coalesce(sz.zones, [])) > 0
+      for name, sz in sizes.sizes : length(try(sz.zones, [])) > 0
     ]
   ]))
 
@@ -245,8 +245,10 @@ locals {
     })
   ]
 
-  rule_cap      = local.rule == null ? null : local.rule.max_vcpus
-  over_rule_cap = local.rule_cap != null && var.request.vcpus > local.rule_cap
+  rule_cap = local.rule == null ? null : local.rule.max_vcpus
+  # A conditional, not `&&`: Terraform type checks both sides of `&&`, so
+  # comparing against a null rule_cap fails even when the guard is false.
+  over_rule_cap = local.rule_cap == null ? false : var.request.vcpus > local.rule_cap
 
   # A growth-restricted family on an existing subscription is usable only
   # within quota it already has. Quota increases for these are refused, so an
@@ -302,7 +304,7 @@ locals {
   all_blocked_by_lifecycle = length(local.lifecycle_permitted) == 0 && length(local.lifecycle_denied) > 0
 
   suggested_successors = distinct(flatten([
-    for f in local.lifecycle_denied : coalesce(var.pool.families[f].successors, [])
+    for f in local.lifecycle_denied : try(var.pool.families[f].successors, [])
   ]))
 
   all_blocked_by_access = local.access_checked && length(local.access_permitted) == 0 && (length(local.access_denied) > 0 || length(local.not_offered) > 0)
