@@ -43,7 +43,7 @@ jobs:
     # and require a reviewer on it if quota changes need approval.
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Reader plus Quota Request Operator on the vended subscription.
       - uses: azure/login@v2
@@ -69,7 +69,7 @@ jobs:
           if ('${{ inputs.deploy }}' -eq 'true') { $params.Deploy = $true }
           ./examples/vending-stage-2-bicep/Invoke-ApeVending.ps1 @params
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: bicepparam

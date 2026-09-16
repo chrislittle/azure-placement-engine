@@ -38,9 +38,9 @@ jobs:
       matrix:
         terraform: ["1.9.8", "latest"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
@@ -64,7 +64,7 @@ jobs:
     name: PowerShell — shared scenarios
     runs-on: ${{ vars.CI_RUNNER_WINDOWS || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Shared scenarios
         shell: pwsh
@@ -74,7 +74,7 @@ jobs:
     name: Bicep — template compiles
     runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build
         run: az bicep build --file bicep/ape-apply.bicep --stdout > /dev/null
