@@ -29,24 +29,35 @@ Reporting**. Quota is not among them. CAF names the gap and does not fill it:
 
 APE is that script, as modules, and it runs as a **second stage** after vending.
 
+```mermaid
+flowchart TB
+    A["<b>Data collection tool</b><br/>ITSM · portal · form"]
+    B["<b>Request pipeline</b><br/>opens a PR"]
+    C["<b>Subscription parameter file</b><br/><i>one per request — both stages read it</i>"]
+
+    A --> B --> C
+
+    C --> S1
+    subgraph S1 ["STAGE 1 — vending"]
+        D["<b>avm-ptn-sub-vending</b><br/>identity · governance · networking · budgets"]
+    end
+
+    S1 -- "subscription_id<br/><i>the entire handoff</i>" --> S2
+
+    subgraph S2 ["STAGE 2 — APE"]
+        direction LR
+        E["<b>ape-read</b><br/>what exists"] --> F["<b>ape-placement</b><br/>what to do"] --> G["<b>ape-apply</b><br/>write it"]
+    end
+
+    S2 --> H["<b>Hand off</b> to the application team"]
+
+    style S1 fill:#eef4fb,stroke:#5b8db8
+    style S2 fill:#eefbf2,stroke:#4a9d6a
+    style C fill:#fdf6e3,stroke:#b58900
 ```
-  data collection tool                 (ITSM / portal / form)
-          |
-          v
-  request pipeline  ------------->  subscription parameter file  (one per request)
-          |                                    |
-          v                                    |
-  STAGE 1: avm-ptn-sub-vending                 |   same file
-     creates the subscription                  |   read by both stages
-          |                                    |
-          |  subscription_id                   |
-          v                                    v
-  STAGE 2: APE            ape-read  ->  ape-placement  ->  ape-apply
-     quota + placement    what exists    what to do        write it
-          |
-          v
-  hand off to the application team
-```
+
+Stage 1 handles what the guidance already covers. Stage 2 is the column it
+leaves out.
 
 ### Why two stages and not one module
 
@@ -197,10 +208,26 @@ Bicep cannot read quota state — see
 [decision 0001](decisions/0001-terraform-is-the-reference-implementation.md) —
 so on this path PowerShell reads and decides and Bicep only writes:
 
+```mermaid
+flowchart LR
+    subgraph TF ["Terraform path"]
+        direction LR
+        T1["ape-read"] --> T2["ape-placement"] --> T3["ape-apply"]
+    end
+    subgraph BP ["Bicep path"]
+        direction LR
+        B1["ApeRead.psm1"] --> B2["ApePlacement.psm1"] --> B3[("ape-apply<br/>.bicepparam")] --> B4["ape-apply.bicep"]
+    end
+    TF -.-> X{{"conformance/scenarios<br/><i>both must give the same answer</i>"}}
+    BP -.-> X
+
+    style TF fill:#eef4fb,stroke:#5b8db8
+    style BP fill:#f6eefb,stroke:#8b5bb8
+    style X fill:#fdf6e3,stroke:#b58900
 ```
-PowerShell:  read quota + SKUs  ->  decide  ->  ape-apply.bicepparam
-Bicep:       ape-apply.bicep    ->  write the quota
-```
+
+Everything left of the `.bicepparam` is PowerShell because Bicep cannot read.
+Only the last step can be Bicep.
 
 The script forms no opinion of its own. It serialises `writes_required`
 unchanged, so Bicep receives exactly what the Terraform module would have
@@ -257,6 +284,52 @@ platform team says "use up the cheap family first".
 ---
 
 ## Reading a decision
+
+Four gates, checked in this order. Each fails for a different reason and has a
+different remedy, and none of the ones below it means anything until the ones
+above pass.
+
+```mermaid
+flowchart TB
+    Q(["request"]) --> G1
+
+    subgraph G1 ["① region"]
+        R1{"Microsoft.Compute<br/>registered?"} -- no --> S1[/"<b>not_ready</b><br/>wait and retry"/]
+        R1 -- yes --> R2{"region<br/>granted?"}
+        R2 -- no --> S2[/"<b>blocked_by_region</b><br/>region access request"/]
+    end
+
+    R2 -- yes --> G2
+    subgraph G2 ["② lifecycle"]
+        L1{"any candidate<br/>not growth-restricted?"} -- no --> S3[/"<b>blocked_by_lifecycle</b><br/>use a successor family"/]
+    end
+
+    L1 -- yes --> G3
+    subgraph G3 ["③ access"]
+        A1{"any candidate<br/>deployable here?"} -- no --> S4[/"<b>blocked_by_access</b><br/>read access.remediation"/]
+    end
+
+    A1 -- yes --> G4
+    subgraph G4 ["④ quota"]
+        Q1{"headroom<br/>covers it?"} -- yes --> S5[/"<b>satisfied</b><br/>no writes"/]
+        Q1 -- no --> Q2{"a pool can<br/>cover it?"}
+        Q2 -- yes --> S6[/"<b>needs_allocation</b><br/>self-service, will succeed"/]
+        Q2 -- no --> Q3{"can any family<br/>reach the size?"}
+        Q3 -- yes --> S7[/"<b>needs_increase</b><br/>evaluated, NOT a promise"/]
+        Q3 -- no --> S8[/"<b>infeasible</b>"/]
+    end
+
+    style G1 fill:#fbeeee,stroke:#b85b5b
+    style G2 fill:#fdf6e3,stroke:#b58900
+    style G3 fill:#f6eefb,stroke:#8b5bb8
+    style G4 fill:#eefbf2,stroke:#4a9d6a
+```
+
+A business rule can refuse before any of this with `blocked_by_rule`.
+
+**Quota and access fail independently.** A quota group grants neither regional
+nor zonal access, so allocating quota for a family the subscription cannot
+deploy buys a guaranteed failure. That is why access is checked first.
 
 `status` is the load-bearing field. Every value tells you what to do next.
 

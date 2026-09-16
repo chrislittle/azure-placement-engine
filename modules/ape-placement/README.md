@@ -205,5 +205,5 @@ and "why not that family" is most of what anyone actually asks.
 
 ## Live example
 
-[`examples/live-subscription`](../../examples/live-subscription) runs it against
-real subscription state read by [`scripts/read_pool.py`](../../scripts/read_pool.py).
+[`examples/vending-stage-2`](../../examples/vending-stage-2) runs it against a
+real subscription, reading state with [`ape-read`](../ape-read).

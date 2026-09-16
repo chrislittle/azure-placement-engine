@@ -17,6 +17,24 @@ Budgets and Reporting — quota is not among them, and CAF names the gap without
 filling it: *"the quota request can fail, so you should run a script to handle
 any errors."*
 
+```mermaid
+flowchart LR
+    C[("Subscription<br/>parameter file")] --> S1
+    subgraph S1 ["STAGE 1 — vending"]
+        D["avm-ptn-sub-vending"]
+    end
+    S1 -- "subscription_id" --> S2
+    subgraph S2 ["STAGE 2 — APE"]
+        direction LR
+        E["ape-read"] --> F["ape-placement"] --> G["ape-apply"]
+    end
+    S2 --> H["application team"]
+
+    style S1 fill:#eef4fb,stroke:#5b8db8
+    style S2 fill:#eefbf2,stroke:#4a9d6a
+    style C fill:#fdf6e3,stroke:#b58900
+```
+
 Two paths, one set of answers:
 
 | | read | decide | apply |
