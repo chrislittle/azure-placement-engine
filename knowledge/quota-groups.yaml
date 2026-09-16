@@ -1,0 +1,103 @@
+# How Azure Quota Groups actually behave.
+#
+# The feature's pitch is "self-service quota without support tickets". That is
+# true of one operation and not the other, and the difference decides what APE
+# can promise at vending time.
+reviewed: 2026-09-16
+source: >
+  Microsoft Learn, read 2026-09-16:
+  learn.microsoft.com/azure/quotas/quota-groups
+  learn.microsoft.com/azure/quotas/transfer-quota-groups
+  learn.microsoft.com/azure/quotas/quota-group-limit-increase
+confidence: high
+recheck_after: 2026-12-31
+
+# The central distinction. Conflating these two would make APE promise a
+# deployment it cannot deliver.
+operations:
+  allocate:
+    what: Move quota between the group and a subscription in it.
+    path: >
+      PATCH /providers/Microsoft.Management/managementGroups/{mg}/subscriptions/{sub}
+      /providers/Microsoft.Quota/groupQuotas/{group}/resourceProviders/Microsoft.Compute
+      /quotaAllocations/{location}
+    approval: none -- genuinely self-service, no Microsoft involvement
+    timing: async, "may take several minutes"
+    note: This is the operation vending depends on.
+
+  raise_group_limit:
+    what: Increase the group's own limit.
+    path: >
+      PATCH /providers/Microsoft.Management/managementGroups/{mg}
+      /providers/Microsoft.Quota/groupQuotas/{group}/resourceProviders/Microsoft.Compute
+      /groupQuotaLimits/{location}
+    approval: >
+      evaluated, NOT guaranteed. Subject to the same checks as a subscription-level
+      request and rejected outright if regional capacity is low.
+    timing: async -- 202 with a Location header and Retry-After 30; poll groupQuotaRequests/{id}
+    on_reject: >
+      No API path. A rejected request must be escalated as a support ticket through
+      the portal's Quota Group blade. The ticket is raised against a subscription in
+      the group, but approved quota is still stamped at the group level.
+    note: >
+      This is the slow, uncertain path, and it is why the group must be filled
+      ahead of vending rather than during it.
+
+# `limit` is the new ABSOLUTE value, never a delta. Sub at 10, want to give it
+# 10 more -> PATCH limit: 20. Deallocation is the same call with a lower number.
+# This is what makes the whole thing expressible as declarative IaC.
+limit_semantics: absolute
+
+# A new group starts at zero and stays there until deliberately filled.
+filling_the_group:
+  harvest:
+    what: Deallocate unused quota from existing subscriptions into the group.
+    approval: none -- self-service
+    note: >
+      The underrated path. An estate whose subscriptions sit on unused quota can
+      pool it and redistribute to new vendings without ever contacting Microsoft.
+      For a vending platform this is likely the primary source, not increase requests.
+  request:
+    what: A group limit increase request.
+    approval: evaluated -- see raise_group_limit
+
+# Reading the group snapshot. These three do not mean the same thing.
+snapshot_fields:
+  availableLimit: total cores available at group level to distribute
+  limit: cores explicitly stamped via approved increase requests
+  quotaAllocated: >
+    per-subscription; NEGATIVE means cores were moved from that subscription
+    INTO the group. Same sign convention as `shareableQuota` on the allocation.
+
+# Quota groups solve quota. They do not solve access, and Microsoft says so
+# twice in its own docs. This preserves the two-gate model: a subscription
+# without regional or zonal access will fail BOTH the quota transfer and the
+# deployment, no matter how much group quota is pointed at it.
+does_not_solve:
+  - regional access
+  - zonal access
+
+constraints:
+  billing_accounts: [EA, MCA, Internal]     # PAYG and personal are excluded
+  resources: IaaS compute only
+  clouds: public only
+  group_membership: a subscription may belong to only ONE quota group at a time
+  rp_registration: Microsoft.Quota and Microsoft.Compute on every participating subscription
+  roles:
+    - GroupQuota Request Operator on the management group holding the group
+    - Quota Request Operator on every participating subscription
+    - Reader on every participating subscription (for portal visibility)
+
+# The group is a global ARM object under an MG, but membership is NOT synced
+# from the MG hierarchy -- subscriptions from any MG can join. So the MG you
+# create the group under is purely an access-control choice.
+scoping_note: >
+  Quota groups are orthogonal to management-group hierarchy. Choose the parent MG
+  for who should be able to operate the group, not for where the subscriptions sit.
+
+# Sharp edge worth knowing before someone tidies up a management group.
+mg_deletion_warning: >
+  Deleting the management group loses access to the group limit. Recovery is to
+  recreate the MG with the same ID. To wind a group down cleanly: allocate cores
+  back out to subscriptions, delete the subscriptions, delete the group object,
+  then delete the MG.
