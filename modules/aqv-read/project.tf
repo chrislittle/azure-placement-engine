@@ -1,4 +1,4 @@
-# Projection. The subtractions and classifications live in ape-placement where
+# Projection. The subtractions and classifications live in aqv-decide where
 # they are tested; this file only reshapes what Azure returned.
 
 locals {

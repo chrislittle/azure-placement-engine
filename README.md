@@ -1,4 +1,4 @@
-# Azure Placement Engine
+# Azure Quota Vending
 
 > [!WARNING]
 > **Experimental. Not ready for use.**
@@ -19,7 +19,7 @@ application team which VM family to use.
 
 A subscription vending module creates a subscription. That subscription arrives
 with Azure's default quota, which is often zero for the family the workload
-needs. APE runs next and does three things:
+needs. AQV runs next and does three things:
 
 1. **Reads** the subscription's quota, the VM sizes Azure will let it deploy,
    and whether it has access to the region and the zones.
@@ -32,11 +32,11 @@ family was rejected.
 
 ## What it does not do
 
-**APE does not deploy anything.** It creates no virtual machine, no scale set
+**AQV does not deploy anything.** It creates no virtual machine, no scale set
 and no disk. The application team deploys the workload, in their own pipeline,
 after the subscription is handed over.
 
-APE's output is an input to that: the application team is told which family to
+AQV's output is an input to that: the application team is told which family to
 deploy into, and the subscription already has the quota for it.
 
 ## Why
@@ -47,7 +47,7 @@ the region. Or the series is one of the thirty that new subscriptions can no
 longer deploy at all. Each of those surfaces as a failed deployment, days or
 weeks after the subscription was handed over.
 
-APE moves that discovery to vending time. When the request can be satisfied, it
+AQV moves that discovery to vending time. When the request can be satisfied, it
 sets the quota and names the family. When it cannot, it says which gate failed
 and what would lift it.
 
@@ -68,9 +68,9 @@ flowchart LR
         D["avm-ptn-sub-vending"]
     end
     S1 -- "subscription_id" --> S2
-    subgraph S2 ["STAGE 2 — APE"]
+    subgraph S2 ["STAGE 2 — AQV"]
         direction LR
-        E["ape-read"] --> F["ape-placement"] --> G["ape-apply"]
+        E["aqv-read"] --> F["aqv-decide"] --> G["aqv-apply"]
     end
     S2 --> H["application team"]
 
@@ -83,8 +83,8 @@ Two paths, one set of answers:
 
 | | read | decide | apply |
 |---|---|---|---|
-| **Terraform** | `modules/ape-read` | `modules/ape-placement` | `modules/ape-apply` |
-| **Bicep** | `powershell/ApeRead.psm1` | `powershell/ApePlacement.psm1` | `bicep/ape-apply.bicep` |
+| **Terraform** | `modules/aqv-read` | `modules/aqv-decide` | `modules/aqv-apply` |
+| **Bicep** | `powershell/AqvRead.psm1` | `powershell/AqvDecide.psm1` | `bicep/aqv-apply.bicep` |
 
 Bicep cannot read quota state, so on that path PowerShell reads and decides and
 Bicep only writes. The decision logic therefore exists twice, and
@@ -94,9 +94,9 @@ scenarios both must pass.
 Built as Terraform and Bicep (AVM) modules. It composes with
 [`Azure/avm-ptn-sub-vending/azurerm`](https://registry.terraform.io/modules/Azure/avm-ptn-sub-vending/azurerm/latest)
 and [`avm/ptn/lz/sub-vending`](https://github.com/Azure/bicep-registry-modules/tree/main/avm/ptn/lz/sub-vending).
-Neither of those handles quota. That is the gap APE fills.
+Neither of those handles quota. That is the gap AQV fills.
 
-APE has no service and no state of its own. Azure's APIs are the source of
+AQV has no service and no state of its own. Azure's APIs are the source of
 truth. The modules read, decide and write.
 
 **[Read the manual](docs/GUIDE.md)** — how to run it, what the answers mean,
@@ -109,11 +109,11 @@ Terraform and Bicep. A previous Python implementation ranked regions and
 recommended placements for a human to act on; it is superseded and not
 published.
 
-- [x] `ape-placement` — decides. 47 tests, no subscription needed
-- [x] `ape-read` — live quota, SKU availability and region access, all Terraform
-- [x] `ape-apply` — write quota, with the refusal semantics documented
+- [x] `aqv-decide` — decides. 47 tests, no subscription needed
+- [x] `aqv-read` — live quota, SKU availability and region access, all Terraform
+- [x] `aqv-apply` — write quota, with the refusal semantics documented
 - [x] `examples/vending-stage-2` — the handoff contract and a sample request
-- [x] Bicep path — PowerShell read/decide, `ape-apply.bicep` write, 23 shared scenarios
+- [x] Bicep path — PowerShell read/decide, `aqv-apply.bicep` write, 23 shared scenarios
 
 ## Design
 
@@ -142,15 +142,16 @@ allocating from a group succeeds where a quota increase may be refused.
 
 | Path | What |
 |---|---|
-| `modules/ape-read/` | Reads live Azure state — quota, SKUs, region access |
-| `modules/ape-placement/` | Decides. No resources, so it tests against fixtures |
-| `modules/ape-apply/` | Writes the quota a decision asked for |
+| `modules/aqv-read/` | Reads live Azure state — quota, SKUs, region access |
+| `modules/aqv-decide/` | Decides. No resources, so it tests against fixtures |
+| `modules/aqv-apply/` | Writes the quota a decision asked for |
 | `powershell/` | The same read and decide, for the Bicep path |
-| `bicep/` | `ape-apply.bicep` — the Bicep half of the Bicep path |
+| `bicep/` | `aqv-apply.bicep` — the Bicep half of the Bicep path |
 | `conformance/` | One set of scenarios both implementations must pass |
 | `docs/GUIDE.md` | The manual |
 | `.github/workflows/` | Conformance, and stage 2 for both paths |
 | `examples/vending-stage-2/` | The stage-2 pattern, with a sample request |
+| `examples/what-can-i-deploy/` | For application teams. Read-only; needs only Reader |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
 
 ## Known constraints

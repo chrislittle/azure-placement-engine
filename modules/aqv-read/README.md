@@ -1,8 +1,8 @@
-# `ape-read`
+# `aqv-read`
 
 Reads the quota, the SKU availability and the region access for one subscription
 in one region. Produces the two inputs that
-[`ape-placement`](../ape-placement) needs.
+[`aqv-decide`](../aqv-decide) needs.
 
 This module reads. It creates and changes nothing.
 
@@ -10,7 +10,7 @@ This module reads. It creates and changes nothing.
 
 ```hcl
 module "read" {
-  source          = "../../modules/ape-read"
+  source          = "../../modules/aqv-read"
   subscription_id = var.subscription_id
   region          = "eastus"
 }
@@ -31,8 +31,8 @@ places it under `.terraform/modules`, which breaks the relative path.
 
 | Name | Type | Description |
 |---|---|---|
-| `quota` | object | Quota state. Pass to `ape-placement`'s `quota`. |
-| `sku_access` | map | Deployable SKU sizes and their zones. Pass to `ape-placement`'s `sku_access`. |
+| `quota` | object | Quota state. Pass to `aqv-decide`'s `quota`. |
+| `sku_access` | map | Deployable SKU sizes and their zones. Pass to `aqv-decide`'s `sku_access`. |
 | `region_accessible` | bool | `false` when the subscription cannot use the region. |
 | `provider_registered` | bool | `false` when `Microsoft.Compute` is not registered yet. |
 
@@ -62,6 +62,6 @@ usage entries, then groups them by family.
 
 ## PowerShell equivalent
 
-[`powershell/ApeRead.psm1`](../../powershell/ApeRead.psm1) performs the same
+[`powershell/AqvRead.psm1`](../../powershell/AqvRead.psm1) performs the same
 reads for the Bicep path. See
 [the manual](../../docs/GUIDE.md#why-bicep-works-differently).

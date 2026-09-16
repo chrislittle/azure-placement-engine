@@ -30,11 +30,11 @@ states:
   retired: gone.
 
 # THE MATRIX THAT MATTERS FOR VENDING. Verbatim from the capacity-restrictions
-# doc, and the first row is the one that reshapes APE's candidate set.
+# doc, and the first row is the one that reshapes AQV's candidate set.
 growth_restriction_matrix:
   new_subscription: >
     CANNOT DEPLOY the affected series at all. Not "cannot grow" -- cannot deploy.
-    A vended subscription is a new subscription, so for APE's primary scenario
+    A vended subscription is a new subscription, so for AQV's primary scenario
     all the series listed below are simply off the table.
   existing_within_approved_quota: can deploy and redeploy, subject to capacity.
   existing_requesting_more: not approved. This is the DeprecatedQuotaType 400.
@@ -55,7 +55,7 @@ odcr_warning: >
   growth-restricted series to new subscriptions, at all.
 
 # Quota family names as the Microsoft.Quota and Compute usages APIs spell them.
-# These are what APE keys on, and all 30 were matched against live SKU data.
+# These are what AQV keys on, and all 30 were matched against live SKU data.
 growth_restricted_families:
   compute_optimized: [standardFFamily, standardFSFamily, standardFSv2Family]
   general_purpose:
@@ -99,7 +99,7 @@ naming_notes:
     burstable families and are not restricted.
 
 # From the doc's own migration table. Deliberately coarse: the right target
-# depends on storage and performance requirements, and APE should surface the
+# depends on storage and performance requirements, and AQV should surface the
 # candidates rather than pick one.
 successors:
   general_purpose: [Dv5, Dv6, Dv7]

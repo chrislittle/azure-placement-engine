@@ -126,7 +126,7 @@ locals {
   # and have different remedies: a quota shortfall is an allocation, an access
   # gap is a support request with lead time.
   #
-  # APE does not close access gaps. It refuses to allocate against them and
+  # AQV does not close access gaps. It refuses to allocate against them and
   # says what would lift them.
 
   placement_type = coalesce(try(var.request.placement.type, null), "regional")

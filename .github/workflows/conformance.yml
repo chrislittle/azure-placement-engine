@@ -49,7 +49,7 @@ jobs:
         run: terraform fmt -check -recursive modules examples conformance
 
       - name: Unit tests
-        working-directory: modules/ape-placement
+        working-directory: modules/aqv-decide
         run: |
           terraform init -backend=false -input=false
           terraform test
@@ -77,4 +77,4 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Build
-        run: az bicep build --file bicep/ape-apply.bicep --stdout > /dev/null
+        run: az bicep build --file bicep/aqv-apply.bicep --stdout > /dev/null

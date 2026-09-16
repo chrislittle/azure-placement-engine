@@ -57,7 +57,7 @@ jobs:
         shell: pwsh
         run: Install-Module powershell-yaml -Force -Scope CurrentUser -AllowClobber
 
-      # Writes ape-apply.bicepparam and, with -Deploy, runs the deployment.
+      # Writes aqv-apply.bicepparam and, with -Deploy, runs the deployment.
       # Exits non-zero when the decision produced no workable placement.
       - name: Read, decide, apply
         shell: pwsh
@@ -67,10 +67,10 @@ jobs:
             RequestFile     = '${{ inputs.request_file }}'
           }
           if ('${{ inputs.deploy }}' -eq 'true') { $params.Deploy = $true }
-          ./examples/vending-stage-2-bicep/Invoke-ApeVending.ps1 @params
+          ./examples/vending-stage-2-bicep/Invoke-AqvVending.ps1 @params
 
       - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: bicepparam
-          path: examples/vending-stage-2-bicep/ape-apply.bicepparam
+          path: examples/vending-stage-2-bicep/aqv-apply.bicepparam

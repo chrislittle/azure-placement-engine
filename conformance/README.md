@@ -1,11 +1,11 @@
 # Conformance
 
-APE ships two implementations of the same decision:
+AQV ships two implementations of the same decision:
 
 | Path | read | decide | apply |
 |---|---|---|---|
-| **Terraform** | `modules/ape-read` | `modules/ape-placement` | `modules/ape-apply` |
-| **Bicep** | `powershell/ApeRead.psm1` | `powershell/ApePlacement.psm1` | `bicep/ape-apply.bicep` |
+| **Terraform** | `modules/aqv-read` | `modules/aqv-decide` | `modules/aqv-apply` |
+| **Bicep** | `powershell/AqvRead.psm1` | `powershell/AqvDecide.psm1` | `bicep/aqv-apply.bicep` |
 
 Bicep cannot read quota state. See
 [the manual](../docs/GUIDE.md#why-bicep-works-differently). On that path

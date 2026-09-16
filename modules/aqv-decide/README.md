@@ -1,4 +1,4 @@
-# `ape-placement`
+# `aqv-decide`
 
 Chooses a VM family for a subscription and calculates the quota limit to set.
 Returns the decision, the reason for it, and the reason each other family was
@@ -6,7 +6,7 @@ rejected.
 
 This module contains no resources. It reads nothing from Azure and deploys
 nothing. The caller supplies the state, usually from
-[`ape-read`](../ape-read).
+[`aqv-read`](../aqv-read).
 
 The chosen family is an answer, not an action. The application team deploys into
 it later.
@@ -21,7 +21,7 @@ terraform test
 
 ```hcl
 module "placement" {
-  source = "../../modules/ape-placement"
+  source = "../../modules/aqv-decide"
 
   request = {
     region   = "eastus"
@@ -40,7 +40,7 @@ module "placement" {
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `request` | object | **required** | What the workload needs. See below. |
-| `quota` | object | **required** | Quota state for the region. From `ape-read`. |
+| `quota` | object | **required** | Quota state for the region. From `aqv-read`. |
 | `sku_access` | map | `{}` | Deployable sizes and zones. Empty skips the access check. |
 | `rules` | list(object) | `[]` | Platform business rules. |
 
@@ -110,7 +110,7 @@ with no `environments` matches every request, so place it last.
 | Name | Type | Description |
 |---|---|---|
 | `decision` | object | The decision and the reasoning. |
-| `writes_required` | list | Pass to [`ape-apply`](../ape-apply). Empty when no write is needed. |
+| `writes_required` | list | Pass to [`aqv-apply`](../aqv-apply). Empty when no write is needed. |
 
 ### `decision`
 
@@ -194,6 +194,6 @@ lost. "Why not that family" is the common question.
 
 ## PowerShell equivalent
 
-[`powershell/ApePlacement.psm1`](../../powershell/ApePlacement.psm1) implements
+[`powershell/AqvDecide.psm1`](../../powershell/AqvDecide.psm1) implements
 the same decision for the Bicep path. Both pass the scenarios in
 [`conformance/`](../../conformance).

@@ -6,9 +6,9 @@
 #   learn.microsoft.com/azure/architecture/landing-zones/subscription-vending
 #
 # Everything above `compute:` is consumed by STAGE 1 (avm-ptn-sub-vending) and
-# is here because a real parameter file carries it. APE reads none of it.
+# is here because a real parameter file carries it. AQV reads none of it.
 #
-# `compute:` is what APE adds. The guidance's deployment-pipeline task table
+# `compute:` is what AQV adds. The guidance's deployment-pipeline task table
 # covers Identity, Governance, Networking, Budgets and Reporting -- and says
 # nothing about quota. CAF names the gap without filling it: "review the
 # subscription quota limits before creating the subscription", and "the quota
@@ -48,7 +48,7 @@ networking:
   connectivity: hub-spoke               # internet-only | hub-spoke | on-premises
   address_space: 10.40.0.0/20           # reserved by the IPAM integration
 
-# --- stage 2: APE -------------------------------------------------------
+# --- stage 2: AQV -------------------------------------------------------
 #
 # The application team states a workload class. Nobody filling in a subscription
 # request knows what standardEDSv5Family is, and they should not have to.

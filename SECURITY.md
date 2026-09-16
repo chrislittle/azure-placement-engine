@@ -2,15 +2,15 @@
 
 ## What this project touches
 
-APE reads quota and SKU availability for a subscription. It writes vCPU quota
+AQV reads quota and SKU availability for a subscription. It writes vCPU quota
 limits. It creates, changes and deletes no other Azure resource.
 
-APE stores no credentials. Both paths use the identity the environment is
+AQV stores no credentials. Both paths use the identity the environment is
 already signed in as: `az login` locally, or OIDC federated credentials in CI.
 
 The identity it runs as needs **Reader** and **Quota Request Operator** on the
 target subscription. `Quota Request Operator` is a built-in role scoped to
-exactly this job; Contributor works and grants far more than APE needs.
+exactly this job; Contributor works and grants far more than AQV needs.
 
 ## What must never be committed
 

@@ -5,7 +5,7 @@
 # are Azure's published taxonomy for exactly this question, and inventing a
 # parallel one would have been jargon for its own sake.
 #
-# The same vocabulary means a request written for APE can be handed to Compute
+# The same vocabulary means a request written for AQV can be handed to Compute
 # Fleet later without translation, if anyone ever wants that.
 reviewed: 2026-09-16
 source: >

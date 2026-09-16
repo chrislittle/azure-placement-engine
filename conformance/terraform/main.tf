@@ -1,4 +1,4 @@
-# Runs every conformance scenario through ape-placement and checks the result
+# Runs every conformance scenario through aqv-decide and checks the result
 # against the scenario's own `expect` block.
 #
 #   terraform init && terraform apply -auto-approve
@@ -20,7 +20,7 @@ locals {
 }
 
 module "placement" {
-  source   = "../../modules/ape-placement"
+  source   = "../../modules/aqv-decide"
   for_each = local.scenarios
 
   request    = each.value.request

@@ -10,7 +10,7 @@
 # If they ever disagree, a test fails rather than a customer getting a different
 # answer from the Bicep path.
 #
-# Keep this file and modules/ape-placement/main.tf in step. The comments there
+# Keep this file and modules/aqv-decide/main.tf in step. The comments there
 # explain WHY each gate exists; they are not repeated here.
 
 Set-StrictMode -Version Latest
@@ -64,14 +64,14 @@ function Get-EffectiveZones {
     return @($published | Where-Object { $_ -notin $restricted } | Sort-Object)
 }
 
-function Get-ApePlacement {
+function Get-AqvDecision {
     <#
         .SYNOPSIS
         Decides which VM family a subscription should get and what its quota
         limit should be set to.
 
         .DESCRIPTION
-        Mirrors modules/ape-placement. Takes the same four inputs and returns the
+        Mirrors modules/aqv-decide. Takes the same four inputs and returns the
         same decision shape. Touches nothing in Azure -- reading is the caller's
         job, exactly as it is for the Terraform module.
     #>
@@ -426,4 +426,4 @@ function Get-ApePlacement {
     }
 }
 
-Export-ModuleMember -Function Get-ApePlacement, Get-EffectiveZones, Get-Keys
+Export-ModuleMember -Function Get-AqvDecision, Get-EffectiveZones, Get-Keys

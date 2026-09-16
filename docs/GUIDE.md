@@ -1,9 +1,9 @@
-# APE: the manual
+# AQV: the manual
 
-How to run the Azure Placement Engine, what its answers mean, and where it sits
+How to run the Azure Quota Vending, what its answers mean, and where it sits
 in a subscription vending pipeline.
 
-- [Where APE fits](#where-ape-fits)
+- [Where AQV fits](#where-aqv-fits)
 - [Prerequisites](#prerequisites)
 - [The subscription request](#the-subscription-request)
 - [Quickstart: Terraform](#quickstart-terraform)
@@ -16,7 +16,7 @@ in a subscription vending pipeline.
 
 ---
 
-## Where APE fits
+## Where AQV fits
 
 Microsoft's [subscription vending guidance][vending] lists five deployment
 tasks: identity, governance, networking, budgets and reporting. Quota is not one
@@ -27,9 +27,9 @@ of them. The Cloud Adoption Framework states the problem but does not solve it:
 
 > the quota request can fail, so you should run a script to handle any errors
 
-APE is that script. It runs as a second stage, after the subscription exists.
+AQV is that script. It runs as a second stage, after the subscription exists.
 
-**APE deploys nothing.** It creates no virtual machine, no scale set and no
+**AQV deploys nothing.** It creates no virtual machine, no scale set and no
 disk. It sets the subscription's vCPU quota and reports which VM family the
 application team should deploy into. The application team deploys the workload
 itself, after the handover.
@@ -39,7 +39,7 @@ flowchart LR
     A[Data collection tool] --> B[Request pipeline]
     B --> C[Subscription parameter file]
     C --> D[Stage 1: sub-vending]
-    D -- subscription_id --> E[Stage 2: APE]
+    D -- subscription_id --> E[Stage 2: AQV]
     E --> F[Application team]
 ```
 
@@ -48,9 +48,9 @@ Stage 1 creates and configures the subscription. Stage 2 gives it quota.
 | Stage | Module | Task |
 |---|---|---|
 | 1 | `avm-ptn-sub-vending` | Create the subscription. Apply identity, governance, networking and budgets. |
-| 2 | `ape-read` | Read the quota, the SKUs and the region access. |
-| 2 | `ape-placement` | Choose a VM family. Calculate the quota to set. |
-| 2 | `ape-apply` | Write the quota. |
+| 2 | `aqv-read` | Read the quota, the SKUs and the region access. |
+| 2 | `aqv-decide` | Choose a VM family. Calculate the quota to set. |
+| 2 | `aqv-apply` | Write the quota. |
 
 Both stages read the same parameter file. Stage 1 gives stage 2 one value: the
 subscription ID.
@@ -93,7 +93,7 @@ On the **vended subscription**, the identity running stage 2 needs:
 | **Quota Request Operator** | `Microsoft.Quota/quotas/write` — and `Microsoft.Support/*`, for raising a ticket when a request is refused |
 
 `Quota Request Operator` is a built-in role and is exactly scoped to this job.
-Contributor also works but grants far more than APE needs.
+Contributor also works but grants far more than AQV needs.
 
 ### Authentication
 
@@ -104,7 +104,7 @@ locally, or OIDC federated credentials in CI. Nothing stores credentials.
 
 ## The subscription request
 
-One YAML file for each request. Both stages read it. APE reads only the
+One YAML file for each request. Both stages read it. AQV reads only the
 `compute:` block.
 
 ### Minimum
@@ -117,7 +117,7 @@ compute:
 
 ### Every option
 
-All fields are optional except `region` and `vcpus`. Omit a field and APE does
+All fields are optional except `region` and `vcpus`. Omit a field and AQV does
 not filter on it.
 
 | Field | Type | Default | Values |
@@ -146,7 +146,7 @@ Azure grants zone access for each SKU size and each zone separately.
 The application team states a category. It does not state a VM family. A person
 who fills in a subscription request is not expected to know Azure family names.
 
-### Fields APE reads from outside `compute:`
+### Fields AQV reads from outside `compute:`
 
 | Field | Used for |
 |---|---|
@@ -191,13 +191,13 @@ terraform apply -var subscription_id="$SUB" -var apply_writes=true
 
 ```hcl
 module "read" {
-  source          = "../../modules/ape-read"
+  source          = "../../modules/aqv-read"
   subscription_id = var.subscription_id
   region          = local.compute.region
 }
 
 module "placement" {
-  source     = "../../modules/ape-placement"
+  source     = "../../modules/aqv-decide"
   request    = local.request
   quota       = module.read.quota
   sku_access = module.read.sku_access
@@ -205,7 +205,7 @@ module "placement" {
 }
 
 module "apply" {
-  source          = "../../modules/ape-apply"
+  source          = "../../modules/aqv-apply"
   subscription_id = var.subscription_id
   region          = local.compute.region
   writes_required = module.placement.writes_required
@@ -213,7 +213,7 @@ module "apply" {
 }
 ```
 
-> **Consuming `ape-read` from outside this repo:** it reads the curated lists
+> **Consuming `aqv-read` from outside this repo:** it reads the curated lists
 > from `knowledge/` by a path relative to itself. A non-local module source
 > makes Terraform copy the module into `.terraform/modules`, which breaks that
 > path. Set `knowledge_dir` explicitly when that happens.
@@ -223,11 +223,11 @@ module "apply" {
 ## Quickstart: Bicep
 
 ```bash
-pwsh -File examples/vending-stage-2-bicep/Invoke-ApeVending.ps1 \
+pwsh -File examples/vending-stage-2-bicep/Invoke-AqvVending.ps1 \
   -SubscriptionId $SUB
 ```
 
-Evaluates the decision and writes `ape-apply.bicepparam`. Nothing is deployed.
+Evaluates the decision and writes `aqv-apply.bicepparam`. Nothing is deployed.
 Add `-Deploy` to apply it.
 
 Bicep cannot read quota state. On this path PowerShell does the read and the
@@ -235,8 +235,8 @@ decision. Bicep does the write.
 
 ```mermaid
 flowchart LR
-    T1[ape-read] --> T2[ape-placement] --> T3[ape-apply]
-    B1[ApeRead.psm1] --> B2[ApePlacement.psm1] --> B3[ape-apply.bicepparam] --> B4[ape-apply.bicep]
+    T1[aqv-read] --> T2[aqv-decide] --> T3[aqv-apply]
+    B1[AqvRead.psm1] --> B2[AqvDecide.psm1] --> B3[aqv-apply.bicepparam] --> B4[aqv-apply.bicep]
 ```
 
 The top row is Terraform. The bottom row is the Bicep path. PowerShell does the
@@ -252,11 +252,11 @@ applied.
 ### Using the PowerShell modules directly
 
 ```powershell
-Import-Module ./powershell/ApeRead.psm1
-Import-Module ./powershell/ApePlacement.psm1
+Import-Module ./powershell/AqvRead.psm1
+Import-Module ./powershell/AqvDecide.psm1
 
-$state = Get-ApeState -SubscriptionId $sub -Region eastus
-$decision = Get-ApePlacement -Request $request -Quota $state.quota `
+$state = Get-AqvState -SubscriptionId $sub -Region eastus
+$decision = Get-AqvDecision -Request $request -Quota $state.quota `
     -SkuAccess $state.sku_access -Rules $rules
 ```
 
@@ -267,7 +267,7 @@ $decision = Get-ApePlacement -Request $request -Quota $state.quota `
 Rules belong to the platform team, not to the requester. They are set in the
 module call, not in the subscription request.
 
-APE evaluates rules in order and uses the first one whose `environments`
+AQV evaluates rules in order and uses the first one whose `environments`
 matches. A rule with no `environments` matches every request, so put it last.
 
 ```hcl
@@ -302,7 +302,7 @@ platform team says "use up the cheap family first".
 
 ## Reading a decision
 
-APE applies four gates, in this order.
+AQV applies four gates, in this order.
 
 ```mermaid
 flowchart LR
@@ -318,7 +318,7 @@ flowchart LR
 
 A gate means nothing until the gates above it pass. Quota and access are
 separate. A quota group grants no regional access and no zonal access. Quota for
-a family the subscription cannot deploy is therefore useless. APE checks access
+a family the subscription cannot deploy is therefore useless. AQV checks access
 first.
 
 A business rule can reject the request before any gate runs. That gives
@@ -361,7 +361,7 @@ Three refusal codes, **none retryable**:
 |---|---|
 | `ContactSupport` | Self-service is exhausted. A ticket is the only route. |
 | `QuotaNotAvailableForResource` | Capacity is not there for this subscription. A smaller ask fares no better. |
-| `DeprecatedQuotaType` | The family is growth-restricted. `ape-placement` predicts this one, so it should never reach the apply. |
+| `DeprecatedQuotaType` | The family is growth-restricted. `aqv-decide` predicts this one, so it should never reach the apply. |
 
 ---
 
@@ -440,14 +440,14 @@ gh api -X POST repos/OWNER/REPO/actions/runners/registration-token -q .token
 
 ```bash
 # On the runner machine, in a NEW directory beside the existing runner
-./config.sh --url https://github.com/OWNER/REPO --token <TOKEN>   --name ape-ci-linux --labels ape-ci-linux --unattended
+./config.sh --url https://github.com/OWNER/REPO --token <TOKEN>   --name aqv-ci-linux --labels aqv-ci-linux --unattended
 sudo ./svc.sh install && sudo ./svc.sh start
 ```
 
 Then set the variable to the label you chose:
 
 ```bash
-gh variable set CI_RUNNER_LINUX --body ape-ci-linux
+gh variable set CI_RUNNER_LINUX --body aqv-ci-linux
 ```
 
 > Do not set the variable before the runner is registered and online, or jobs

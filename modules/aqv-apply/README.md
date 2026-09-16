@@ -1,13 +1,13 @@
-# `ape-apply`
+# `aqv-apply`
 
 Writes the quota limits a placement decision asked for. Takes
-[`ape-placement`](../ape-placement)'s `writes_required` without change.
+[`aqv-decide`](../aqv-decide)'s `writes_required` without change.
 
 ## Usage
 
 ```hcl
 module "apply" {
-  source          = "../../modules/ape-apply"
+  source          = "../../modules/aqv-apply"
   subscription_id = var.subscription_id
   region          = "eastus"
   writes_required = module.placement.writes_required
@@ -23,7 +23,7 @@ creates nothing.
 |---|---|---|---|
 | `subscription_id` | string | **required** | Subscription whose quota is written. |
 | `region` | string | **required** | Azure region the quota applies to. |
-| `writes_required` | list(object) | `[]` | From `ape-placement`. Each item has `scope`, `name` and `limit`. |
+| `writes_required` | list(object) | `[]` | From `aqv-decide`. Each item has `scope`, `name` and `limit`. |
 | `enabled` | bool | `true` | Set `false` to evaluate a decision without writing. |
 
 Each `scope` is `regional` or `family`. Each `limit` is the new absolute value,
@@ -56,7 +56,7 @@ Azure refuses a quota write with one of three codes. Do not retry any of them.
 |---|---|---|
 | `ContactSupport` | Self-service is exhausted. | Raise a support request. |
 | `QuotaNotAvailableForResource` | Capacity is not available for this subscription. | Choose another region or size. A smaller request does not help. |
-| `DeprecatedQuotaType` | The family is growth-restricted. | Choose a successor family. `ape-placement` predicts this, so it should not reach the apply. |
+| `DeprecatedQuotaType` | The family is growth-restricted. | Choose a successor family. `aqv-decide` predicts this, so it should not reach the apply. |
 
 ## Timing
 
@@ -77,5 +77,5 @@ This works as desired state because `limit` is absolute.
 
 ## Bicep equivalent
 
-[`bicep/ape-apply.bicep`](../../bicep/ape-apply.bicep) performs the same writes
+[`bicep/aqv-apply.bicep`](../../bicep/aqv-apply.bicep) performs the same writes
 for the Bicep path.

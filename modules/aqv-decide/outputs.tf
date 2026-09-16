@@ -58,7 +58,7 @@ output "decision" {
       frozen = [for f in local.access_permitted : f if local.lifecycle_of[f] == "growth_restricted"]
     }
 
-    # Access is a gate in its own right, and APE only reports on it -- closing
+    # Access is a gate in its own right, and AQV only reports on it -- closing
     # an access gap is a support request, not something a module can do.
     access = {
       checked   = local.access_checked

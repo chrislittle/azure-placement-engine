@@ -9,7 +9,7 @@ Reporting**. Quota is not among them. CAF names the gap without filling it:
 
 > the quota request can fail, so you should run a script to handle any errors
 
-APE is that script, written as Terraform modules.
+AQV is that script, written as Terraform modules.
 
 ## Where it runs
 
@@ -20,7 +20,7 @@ data collection  ->  request pipeline  ->  subscription parameter file
                                                     |
                                             subscription_id
                                                     |
-                          stage 2: ape-read -> ape-placement -> ape-apply
+                          stage 2: aqv-read -> aqv-decide -> aqv-apply
 ```
 
 `subscription_id` is the entire handoff contract, and `avm-ptn-sub-vending`
@@ -56,7 +56,7 @@ Writes are **off by default** so the decision can be reviewed first. Add
 
 [`request.example.yaml`](request.example.yaml) is a subscription parameter file in
 the guidance's sense — one per request, produced by the request pipeline. Fields
-above `compute:` belong to stage 1 and APE ignores them; `compute:` is what APE
+above `compute:` belong to stage 1 and AQV ignores them; `compute:` is what AQV
 adds.
 
 The application team states a **workload class**, not an Azure VM family:

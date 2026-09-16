@@ -1,7 +1,7 @@
-# Reads live Azure state and projects it into the shapes ape-placement wants.
+# Reads live Azure state and projects it into the shapes aqv-decide wants.
 #
 # Separate module because reading and deciding are separate concerns: this one
-# talks to Azure and holds no logic worth testing, while ape-placement holds all
+# talks to Azure and holds no logic worth testing, while aqv-decide holds all
 # the logic and talks to nothing.
 
 terraform {

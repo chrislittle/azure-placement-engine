@@ -10,7 +10,7 @@ variable "region" {
 
 variable "writes_required" {
   description = <<-EOT
-    Straight from `ape-placement`'s `writes_required` output. Empty means the
+    Straight from `aqv-decide`'s `writes_required` output. Empty means the
     decision needs nothing written, and this module then does nothing.
 
     Each `limit` is the ABSOLUTE new value, matching Microsoft.Quota semantics.

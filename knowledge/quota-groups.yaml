@@ -1,7 +1,7 @@
 # How Azure Quota Groups actually behave.
 #
 # The feature's pitch is "self-service quota without support tickets". That is
-# true of one operation and not the other, and the difference decides what APE
+# true of one operation and not the other, and the difference decides what AQV
 # can promise at vending time.
 reviewed: 2026-09-16
 source: >
@@ -12,7 +12,7 @@ source: >
 confidence: high
 recheck_after: 2026-12-31
 
-# The central distinction. Conflating these two would make APE promise a
+# The central distinction. Conflating these two would make AQV promise a
 # deployment it cannot deliver.
 operations:
   allocate:
@@ -153,7 +153,7 @@ ecosystem:
     networking, role assignments, RP registration, resource groups, managed
     identities, NSGs, route tables and budgets. Quota is simply absent.
 
-# Transferring idle quota is self-service and is the most useful thing APE can do
+# Transferring idle quota is self-service and is the most useful thing AQV can do
 # with this feature. It is also taking cores from a subscription someone else
 # owns, so the authorisation must not come from a usage reading.
 reallocation_note: >

@@ -18,7 +18,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-Import-Module (Join-Path $PSScriptRoot '..' '..' 'powershell' 'ApePlacement.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot '..' '..' 'powershell' 'AqvDecide.psm1') -Force
 
 # Scenario key -> how to pull the same value off a decision.
 $checks = [ordered]@{
@@ -43,7 +43,7 @@ foreach ($file in Get-ChildItem -Path $ScenarioPath -Filter '*.json' | Sort-Obje
     $s = Get-Content $file.FullName -Raw | ConvertFrom-Json
 
     try {
-        $d = Get-ApePlacement -Request $s.request -Quota $s.quota -SkuAccess $s.sku_access -Rules $s.rules
+        $d = Get-AqvDecision -Request $s.request -Quota $s.quota -SkuAccess $s.sku_access -Rules $s.rules
     }
     catch {
         $failed++

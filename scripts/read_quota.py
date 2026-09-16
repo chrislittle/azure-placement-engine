@@ -1,4 +1,4 @@
-"""Project live Azure state into the `quota` and `sku_access` inputs ape-placement wants.
+"""Project live Azure state into the `quota` and `sku_access` inputs aqv-decide wants.
 
 Two separate reads, because they are two separate gates:
 

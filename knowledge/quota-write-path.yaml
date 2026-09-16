@@ -1,6 +1,6 @@
 # What actually happens when you write a per-subscription quota limit.
 #
-# This is v1's backend -- the thing APE writes when there is no quota group
+# This is v1's backend -- the thing AQV writes when there is no quota group
 # behind the subscription. Everything below was observed against a live
 # PayAsYouGo subscription, not read off a doc page.
 reviewed: 2026-09-16
@@ -42,7 +42,7 @@ outcomes:
     note: >
       `ContactSupport` is the machine-readable signal that the self-service path
       is exhausted and a ticket is the only remaining route. This is the
-      outcome APE must handle, because it is indistinguishable from success at
+      outcome AQV must handle, because it is indistinguishable from success at
       submission time.
 
   evaluated_then_refused_capacity:
@@ -81,7 +81,7 @@ is_quota_applicable_warning: >
 # Consequences for the module.
 implications:
   - >
-    A write is not a decision. APE can report "needs_increase" but must never
+    A write is not a decision. AQV can report "needs_increase" but must never
     present it as a promise, because the same submission can be granted for one
     family and refused for the next.
   - >
@@ -111,7 +111,7 @@ vending_integration:
     subscription_id and subscription_resource_id, plus resource_group_resource_ids,
     virtual_network_resource_ids, umi_* and budget_resource_id.
   note: >
-    The module exposes the new subscription's id, which is all APE needs to be
+    The module exposes the new subscription's id, which is all AQV needs to be
     wired downstream of it. There is NO passthrough for workload metadata or
     requirements, and nothing quota-related anywhere in its inputs -- so the
     request that drives placement has to be a sibling input to both modules

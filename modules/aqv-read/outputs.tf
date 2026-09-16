@@ -1,12 +1,12 @@
 output "quota" {
-  description = "Quota state for the region, shaped for ape-placement's `quota` input."
+  description = "Quota state for the region, shaped for aqv-decide's `quota` input."
   value       = local.quota
 }
 
 output "sku_access" {
   description = <<-EOT
     What this subscription may deploy in the region, shaped for
-    ape-placement's `sku_access` input. Empty when the region is inaccessible,
+    aqv-decide's `sku_access` input. Empty when the region is inaccessible,
     which the quota's `region_accessible` reports.
   EOT
   value       = local.sku_access

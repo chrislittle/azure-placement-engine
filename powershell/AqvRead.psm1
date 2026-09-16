@@ -1,6 +1,6 @@
 # Reads live Azure state for the Bicep path.
 #
-# The PowerShell twin of modules/ape-read. Same three reads, same projections,
+# The PowerShell twin of modules/aqv-read. Same three reads, same projections,
 # same output shape -- because the decision logic downstream is held to the same
 # conformance scenarios in both languages.
 #
@@ -23,7 +23,7 @@ function Invoke-Arm {
     return ($r.Content | ConvertFrom-Json)
 }
 
-function Get-ApeRegionAccess {
+function Get-AqvRegionAccess {
     <#
         .SYNOPSIS
         Whether the subscription can use the region at all.
@@ -61,11 +61,11 @@ function Get-ApeRegionAccess {
     }
 }
 
-function Get-ApeVmCategory {
+function Get-AqvVmCategory {
     <#
         Azure vmCategory for a family. Order matters -- see
         knowledge/vm-series-classes.yaml. Mirrors the same function in
-        scripts/read_quota.py and modules/ape-read/project.tf.
+        scripts/read_quota.py and modules/aqv-read/project.tf.
     #>
     param([string]$Family, [double[]]$Ratios, [bool]$HasGpu, [bool]$HasRdma)
 
@@ -84,10 +84,10 @@ function Get-ApeVmCategory {
     return 'MemoryOptimized'
 }
 
-function Get-ApeQuota {
+function Get-AqvQuota {
     <#
         .SYNOPSIS
-        Quota state for a region, shaped for Get-ApePlacement's -Quota.
+        Quota state for a region, shaped for Get-AqvDecision's -Quota.
 
         .DESCRIPTION
         Families reporting a limit of zero are omitted: absent is not the same
@@ -104,7 +104,7 @@ function Get-ApeQuota {
         $Access
     )
 
-    if (-not $Access) { $Access = Get-ApeRegionAccess -SubscriptionId $SubscriptionId -Region $Region }
+    if (-not $Access) { $Access = Get-AqvRegionAccess -SubscriptionId $SubscriptionId -Region $Region }
 
     $quota = [ordered]@{
         region_accessible    = $Access.region_accessible
@@ -116,7 +116,7 @@ function Get-ApeQuota {
     if (-not $Access.region_accessible) { return [pscustomobject]$quota }
 
     $usages = Invoke-Arm "/subscriptions/$SubscriptionId/providers/Microsoft.Compute/locations/$Region/usages?api-version=$script:ComputeApi"
-    $restricted = Get-ApeGrowthRestricted -KnowledgeDir $KnowledgeDir
+    $restricted = Get-AqvGrowthRestricted -KnowledgeDir $KnowledgeDir
 
     foreach ($u in $usages.value) {
         $name = $u.name.value
@@ -137,7 +137,7 @@ function Get-ApeQuota {
     return [pscustomobject]$quota
 }
 
-function Get-ApeGrowthRestricted {
+function Get-AqvGrowthRestricted {
     <#
         Families frozen by the July 2026 capacity growth restrictions, read from
         knowledge/ rather than duplicated here so the list has one home. Scanned
@@ -151,11 +151,11 @@ function Get-ApeGrowthRestricted {
     return @([regex]::Matches($block, '\bstandard\w*Family\b') | ForEach-Object { $_.Value } | Select-Object -Unique)
 }
 
-function Get-ApeSkuAccess {
+function Get-AqvSkuAccess {
     <#
         .SYNOPSIS
         What the subscription may deploy in the region, plus per-family
-        attributes, shaped for Get-ApePlacement.
+        attributes, shaped for Get-AqvDecision.
 
         .DESCRIPTION
         Published and restricted zones are returned side by side rather than
@@ -220,7 +220,7 @@ function Get-ApeSkuAccess {
     foreach ($family in $agg.Keys) {
         $a = $agg[$family]
         $attributes[$family] = [ordered]@{
-            category               = Get-ApeVmCategory -Family $family -Ratios $a.ratios.ToArray() -HasGpu $a.gpu -HasRdma $a.rdma
+            category               = Get-AqvVmCategory -Family $family -Ratios $a.ratios.ToArray() -HasGpu $a.gpu -HasRdma $a.rdma
             burstable              = [bool]($family -match '(?i)^standardB')
             confidential_computing = $a.cc
             architectures          = @($a.arch | Select-Object -Unique | Sort-Object)
@@ -230,10 +230,10 @@ function Get-ApeSkuAccess {
     [pscustomobject]@{ sku_access = [pscustomobject]$access; attributes = [pscustomobject]$attributes }
 }
 
-function Get-ApeState {
+function Get-AqvState {
     <#
         .SYNOPSIS
-        Everything Get-ApePlacement needs, in one call.
+        Everything Get-AqvDecision needs, in one call.
     #>
     [CmdletBinding()]
     param(
@@ -242,14 +242,14 @@ function Get-ApeState {
         [string]$KnowledgeDir = (Join-Path $PSScriptRoot '..' 'knowledge')
     )
 
-    $access = Get-ApeRegionAccess -SubscriptionId $SubscriptionId -Region $Region
-    $quota = Get-ApeQuota -SubscriptionId $SubscriptionId -Region $Region -KnowledgeDir $KnowledgeDir -Access $access
+    $access = Get-AqvRegionAccess -SubscriptionId $SubscriptionId -Region $Region
+    $quota = Get-AqvQuota -SubscriptionId $SubscriptionId -Region $Region -KnowledgeDir $KnowledgeDir -Access $access
 
     if (-not $access.region_accessible) {
         return [pscustomobject]@{ quota = $quota; sku_access = [pscustomobject]@{} }
     }
 
-    $sku = Get-ApeSkuAccess -SubscriptionId $SubscriptionId -Region $Region
+    $sku = Get-AqvSkuAccess -SubscriptionId $SubscriptionId -Region $Region
 
     # Category and attributes belong on the quota entry the decision ranks, not
     # on the access data.
@@ -265,4 +265,4 @@ function Get-ApeState {
     [pscustomobject]@{ quota = $quota; sku_access = $sku.sku_access }
 }
 
-Export-ModuleMember -Function Get-ApeState, Get-ApeQuota, Get-ApeSkuAccess, Get-ApeRegionAccess, Get-ApeVmCategory, Get-ApeGrowthRestricted
+Export-ModuleMember -Function Get-AqvState, Get-AqvQuota, Get-AqvSkuAccess, Get-AqvRegionAccess, Get-AqvVmCategory, Get-AqvGrowthRestricted

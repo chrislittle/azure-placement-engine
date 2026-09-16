@@ -2,7 +2,7 @@
 //
 // The Bicep half of the Bicep path. Bicep cannot read quota state -- see
 // docs/GUIDE.md -- so the reading and the deciding happen in
-// powershell/ApePlacement.psm1, which emits a .bicepparam for this file.
+// powershell/AqvDecide.psm1, which emits a .bicepparam for this file.
 //
 // `limit` is absolute, never a delta, which is what lets a quota be expressed
 // declaratively at all.

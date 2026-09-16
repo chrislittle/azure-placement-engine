@@ -66,14 +66,14 @@ locals {
 }
 
 module "read" {
-  source = "../../modules/ape-read"
+  source = "../../modules/aqv-read"
 
   subscription_id = var.subscription_id
   region          = local.compute.region
 }
 
 module "placement" {
-  source = "../../modules/ape-placement"
+  source = "../../modules/aqv-decide"
 
   request    = local.request
   quota      = module.read.quota
@@ -91,7 +91,7 @@ module "placement" {
 }
 
 module "apply" {
-  source = "../../modules/ape-apply"
+  source = "../../modules/aqv-apply"
 
   subscription_id = var.subscription_id
   region          = local.compute.region
