@@ -79,13 +79,60 @@ if ($types -contains 'MicrosoftCustomerAgreement') {
     Write-Host '    MCA found. Confirm it is MCA-Enterprise, not MCA-Online.' -ForegroundColor Yellow
 }
 
+# --- A1b: the check that actually decides -------------------------------
+# Adding a subscription to a group is refused with HTTP 400 and
+# "QuotaId does not contain EnterpriseAgreement or Internal". That is a
+# substring test on the subscription's own quotaId, so it can be answered here
+# with a read, before anything is attempted.
+Write-Host ''
+Write-Host '  Subscription eligibility' -ForegroundColor Cyan
+$quotaIds = [ordered]@{}
+$eligibleSubs = @()
+foreach ($sub in @($DonorSubscriptionId, $TargetSubscriptionId)) {
+    $label = if ($sub -eq $DonorSubscriptionId) { 'donor' } else { 'target' }
+    $d = Invoke-AqvApi -Method GET -Path "/subscriptions/$sub" -ApiVersion '2022-12-01' `
+        -Purpose "A1: quotaId for the $label subscription"
+    $qid = Get-AqvProp $d.Body 'subscriptionPolicies' 'quotaId'
+
+    # The error message names these two and nothing else. Whether an
+    # MCA-Enterprise subscription carries one of them is exactly what this run
+    # is meant to find out, so a value that matches neither is reported rather
+    # than treated as final.
+    $ok = $qid -and ($qid -match 'EnterpriseAgreement|Internal')
+    $quotaIds[$label] = [ordered]@{ subscription_id = $sub; quota_id = $qid; matches_known_eligible = $ok }
+    if ($ok) { $eligibleSubs += $label }
+
+    Write-Host ("    {0,-8} quotaId {1,-32} {2}" -f $label, ($qid ?? 'unreadable'),
+        $(if ($ok) { 'eligible' } else { 'NOT eligible' })) `
+        -ForegroundColor $(if ($ok) { 'Green' } else { 'Yellow' })
+}
+$summary.quota_ids = $quotaIds
+$summary.eligible_subscriptions = $eligibleSubs
+
+if ($eligibleSubs.Count -lt 2) {
+    Write-Host ''
+    Write-Host '    Group membership will be refused for any subscription above marked' -ForegroundColor Yellow
+    Write-Host '    NOT eligible, with HTTP 400:'
+    Write-Host '      "QuotaId does not contain EnterpriseAgreement or Internal"'
+    Write-Host '    Measured, not guessed: PayAsYouGo_2014-09-01 and MSDN_2014-09-01 both fail.'
+    Write-Host '    If your quotaId is an MCA one, run step 3 anyway and record what happens:'
+    Write-Host '    whether MCA is supported at all is an open question.'
+}
+
 # --- A2: the GroupQuota Request Operator role ---------------------------
 Write-Host ''
 Write-Host '  Roles' -ForegroundColor Cyan
+# Role definitions are tenant-wide, so either subscription answers. Asking the
+# target first and falling back matters because a subscription you cannot read
+# returns 404, which would otherwise be reported as "the role does not exist".
 $roleFilter = "`$filter=roleName eq 'GroupQuota Request Operator'"
-$roles = Invoke-AqvApi -Method GET `
-    -Path "/subscriptions/$TargetSubscriptionId/providers/Microsoft.Authorization/roleDefinitions?$roleFilter" `
-    -ApiVersion '2022-04-01' -Purpose 'A2: does GroupQuota Request Operator exist'
+$roles = $null
+foreach ($sub in @($TargetSubscriptionId, $DonorSubscriptionId)) {
+    $roles = Invoke-AqvApi -Method GET `
+        -Path "/subscriptions/$sub/providers/Microsoft.Authorization/roleDefinitions?$roleFilter" `
+        -ApiVersion '2022-04-01' -Purpose 'A2: does GroupQuota Request Operator exist'
+    if ($roles.Ok) { break }
+}
 
 $roleFound = $false
 if ($roles.Ok -and @(Get-AqvProp $roles.Body 'value').Count -gt 0) {
@@ -106,17 +153,22 @@ if ($roles.Ok -and @(Get-AqvProp $roles.Body 'value').Count -gt 0) {
 }
 else {
     $summary.groupquota_role = $null
-    Write-Host '    GroupQuota Request Operator: NOT FOUND at subscription scope.' -ForegroundColor Yellow
-    Write-Host '    It may be defined only at management group scope. Step 3 will confirm.'
+    Write-Host ("    GroupQuota Request Operator: NOT FOUND (HTTP {0})." -f $roles.Status) -ForegroundColor Yellow
+    Write-Host '    A 404 here usually means the subscription could not be read, not that'
+    Write-Host '    the role is missing. Check the subscription IDs before reading anything into it.'
 }
 $summary.groupquota_role_found = $roleFound
 
 # Quota Request Operator is the per-subscription half and is already used by
 # AQV's existing path, so its absence is a real blocker rather than a curiosity.
 $qroFilter = "`$filter=roleName eq 'Quota Request Operator'"
-$qro = Invoke-AqvApi -Method GET `
-    -Path "/subscriptions/$TargetSubscriptionId/providers/Microsoft.Authorization/roleDefinitions?$qroFilter" `
-    -ApiVersion '2022-04-01' -Purpose 'A2: Quota Request Operator definition'
+$qro = $null
+foreach ($sub in @($TargetSubscriptionId, $DonorSubscriptionId)) {
+    $qro = Invoke-AqvApi -Method GET `
+        -Path "/subscriptions/$sub/providers/Microsoft.Authorization/roleDefinitions?$qroFilter" `
+        -ApiVersion '2022-04-01' -Purpose 'A2: Quota Request Operator definition'
+    if ($qro.Ok) { break }
+}
 $summary.quota_request_operator_found = ($qro.Ok -and @(Get-AqvProp $qro.Body 'value').Count -gt 0)
 
 # --- A3: resource provider registration ---------------------------------
@@ -136,6 +188,13 @@ foreach ($sub in @($DonorSubscriptionId, $TargetSubscriptionId)) {
     $regs[$label] = $perSub
 }
 $summary.provider_registration = $regs
+
+$unreadable = @($regs.Keys | Where-Object { "$($regs[$_].'Microsoft.Compute')" -like 'HTTP 4*' })
+if ($unreadable.Count -gt 0) {
+    Write-Host ''
+    Write-Host ("    Could not read: {0}. Check the subscription ID and your access." -f ($unreadable -join ', ')) -ForegroundColor Yellow
+    $summary.unreadable_subscriptions = $unreadable
+}
 
 # --- Baseline -----------------------------------------------------------
 # The point of the whole step. Everything a later step changes is measured
@@ -205,8 +264,14 @@ $file = Save-AqvCapture -Name '00-preflight' -Summary $summary
 
 Write-Host ''
 Write-Host '  Result' -ForegroundColor Cyan
-if ($summary.eligible_agreement_found) {
-    Write-Host '    Eligible agreement type found. Step 1 can run.' -ForegroundColor Green
+if ($eligibleSubs.Count -eq 2) {
+    Write-Host '    Both subscriptions carry an eligible quotaId. Step 1 can run.' -ForegroundColor Green
+}
+elseif ($summary.eligible_agreement_found) {
+    Write-Host '    The billing account looks eligible, but at least one subscription''s' -ForegroundColor Yellow
+    Write-Host '    quotaId does not contain EnterpriseAgreement or Internal. The quotaId is'
+    Write-Host '    what the membership call tests, so expect step 3 to be refused.'
+    Write-Host '    Run it anyway and send the capture: that refusal is itself a finding.'
 }
 else {
     Write-Host '    No eligible agreement type found.' -ForegroundColor Red

@@ -41,8 +41,7 @@ that holds quota without writing anything.
 ./scripts/Step02-ReadGroup.ps1 -GroupName <group> -ManagementGroupId <mg> -SubscriptionId <a member>
 ```
 
-With no arguments it reads the group named in `run-config.json`, which does not
-exist until step 3.
+With no arguments it reads the group named in `run-config.json`.
 
 ## What to look for
 
@@ -61,4 +60,4 @@ this returned, each citing `captures/02-read-group.json`.
 If the group is empty, say which questions are still open and that step 4 is
 what fills it.
 
-Next: `/qg-3-create-group`, which is the first step that writes.
+Next: `/qg-3-join-group`, which is the first step that writes.

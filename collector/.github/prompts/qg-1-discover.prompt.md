@@ -32,14 +32,13 @@ replies with the exact phrase.
 
 Ask for:
 
-- The **management group** the quota group will be created under. Any one the
-  user can write to. Quota groups are orthogonal to the management group
-  hierarchy, so this is an access-control choice and nothing else.
+- The **management group** their quota group sits under. Step 1's own listing
+  shows which groups exist and where, so ask after showing them, not before.
 - The **VM family** to move, exactly as step 0 printed it. Family names are
   case sensitive.
 - How many **cores** to move. 8 is plenty. More is not a better experiment.
-- Optionally a **group name**. Lower-case letters and digits only, starting with
-  a letter. A hyphen is rejected by the schema. The default is `aqvcollector`.
+- **Which quota group** to use, by name, from the ones step 1 lists. The
+  collector joins an existing group; it does not create one.
 
 Then run:
 
@@ -50,9 +49,13 @@ Then run:
 
 ## What to do with the result
 
-**If an existing quota group turned up, say so clearly.** A group that already
-holds quota is much better evidence than the empty one step 3 would create, and
-it can be read in step 2 with no writes at all. Offer that route first.
+**Name every quota group that turned up and ask which to use.** A group that
+already holds quota is the best evidence in this whole collector, and step 2
+reads it with no writes at all. Offer that route first.
+
+**If none turned up**, stop. The collector joins an existing group. Say that
+`scripts/New-SandboxGroup.ps1` can stand one up in a sandbox tenant, and that it
+is deliberately outside the numbered run.
 
 **If either subscription is already in a group**, stop and say so. A
 subscription can be in only one group.

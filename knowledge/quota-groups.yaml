@@ -106,10 +106,40 @@ verified_reads:
       groupQuotas/{group}/resourceProviders/{rp}/locationSettings, and the
       aggregate usage read does not work until it is on. Nothing in
       learn.microsoft.com/azure/quotas/quota-groups covers this.
+    write_attempted: >
+      PUT {group}/resourceProviders/Microsoft.Compute/locationSettings/{location}
+      with {"properties": {"enforcementEnabled": "Enabled"}} on 2026-09-19.
+      ACCEPTED: HTTP 201, Retry-After 30, and an Azure-AsyncOperation header
+      pointing at groupQuotas/{group}/locationSettingsOperationsStatus/{guid}.
+      The body came back as
+      {"properties": {"enforcedGroupName": "homeqg-centralus",
+                      "provisioningState": "ACCEPTED"},
+       "type": "Microsoft.Quota/locationSettings", "name": "centralus"}
+    but_never_landed: >
+      Twenty minutes and two attempts later, locationSettings still returns 404
+      EntityNotFound, locationUsages still returns 405, and the group object is
+      unchanged at groupType AllocationGroup. The write was accepted and did
+      nothing.
+    what_that_means: >
+      A 201 on this endpoint proves NOTHING. It is accepted before eligibility
+      is evaluated, exactly like the 202 on a per-subscription quota PUT. Any
+      client, AQV included, has to read the state back rather than trust the
+      submit.
+
+      The tenant tested is MCA-Individual, so the most likely explanation is the
+      billing account gate applying asynchronously. That is a guess. The
+      collector is what settles it.
+    field_name_confirmed: >
+      enforcementEnabled, taking the string "Enabled". Three other shapes were
+      queued behind it and never needed: the first was accepted.
+    new_field: >
+      enforcedGroupName, "{group}-{location}". An enforced group appears to get
+      a derived per-location name. Nothing documents it.
     unknown: >
-      What enforcement changes besides unlocking that read, whether it is
-      required for allocation to work at all, and whether it can be turned off
-      again. The collector has to answer this before anything is designed.
+      What enforcement changes besides unlocking locationUsages, whether it is
+      required for allocation at all, and whether it can be turned off again.
+      Also whether it ever succeeds on an ineligible account or fails silently
+      forever.
     severity: blocking
 
   # --- Server errors on a documented type -------------------------------
@@ -150,6 +180,40 @@ verified_reads:
       no group object. It is also preview/alpha only.
     unknown: Everything except that the endpoints exist and are readable.
     severity: investigate
+
+  # --- WHERE THE ELIGIBILITY GATE ACTUALLY IS ---------------------------
+  eligibility_gate:
+    finding: >
+      Membership is the gate, and it is SYNCHRONOUS. Adding a subscription to a
+      group returns HTTP 400 immediately:
+      "{sub} is not eligible to use Group Quota functionality. QuotaId does not
+      contain EnterpriseAgreement or Internal"
+    measured: >
+      Tried on 2026-09-19 against a real group, with two subscriptions:
+      PayAsYouGo_2014-09-01 and MSDN_2014-09-01. Both refused, 400 in about
+      1.2 seconds, nothing added to the group.
+    not_gated: >
+      Creating a group is NOT gated: a Microsoft.Quota/groupQuotas object exists
+      and reads normally on an MCA-Individual tenant. Neither is reading any of
+      the group APIs. Only membership is.
+    checkable_before_trying: >
+      GET /subscriptions/{id}?api-version=2022-12-01 returns
+      subscriptionPolicies.quotaId. The gate is a substring test on that value,
+      so AQV can decide a subscription is ineligible with one read and no write.
+      Observed values that FAIL: PayAsYouGo_2014-09-01, MSDN_2014-09-01.
+    contradicts: >
+      constraints.billing_accounts above says [EA, MCA, Internal]. The error
+      message names only EnterpriseAgreement and Internal. Either an
+      MCA-Enterprise subscription carries a quotaId that CONTAINS
+      "EnterpriseAgreement" -- plausible, since subscriptions migrated from EA
+      often keep EnterpriseAgreement_2014-09-01 -- or MCA is not supported at
+      all despite the documentation. Unresolved, and it decides who can use
+      this feature.
+    implication_for_aqv: >
+      A precondition check in aqv-read, not a failure at apply time. Read the
+      quotaId, and when it contains neither string, report the subscription as
+      outside the group path instead of letting a write fail later.
+    severity: answered
 
   # --- The API version spread was wrong ---------------------------------
   api_versions:
@@ -399,3 +463,19 @@ reallocation_note: >
   be a scale set that bursts to 480 nightly, and harvesting to usage-plus-margin
   would break it. Owners should declare a floor they keep; usage informs the
   recommendation, the declaration authorises the take.
+
+# A trap that cost a debugging round, and would cost anyone else one.
+async_poll_urls:
+  finding: >
+    The Location and Azure-AsyncOperation headers on a Microsoft.Quota
+    long-running operation carry a SIGNED query string -- t, c, s and h
+    parameters alongside api-version.
+  do_not: >
+    Rewrite any part of it. Stripping api-version to re-add it, or rebuilding
+    the URL from the path, breaks the signature and the poll returns
+    401 AuthorizationFailed: "Unable to verify that the user that sent this
+    request is the original caller of the asynchronous operation being polled."
+  consequence: >
+    That error reads like a permissions problem and is not one. It is the same
+    message seen when polling a quota operation as a different principal, so the
+    two are easy to confuse. Use the header verbatim.

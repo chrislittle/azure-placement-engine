@@ -54,11 +54,24 @@ built on unverified reading.
 | | |
 |---|---|
 | **Reads** | Billing account type, management groups, quota groups, per-subscription vCPU quota, role assignments |
-| **Writes** | Creates one quota group. Moves vCPU quota between two subscriptions you nominate. Deletes the group at the end |
-| **Does not** | Deploy any resource, create any subscription, read any workload data, or send anything anywhere |
+| **Writes** | Adds two subscriptions you nominate to **your existing** quota group, and moves vCPU quota between them |
+| **Does not** | Create or delete a quota group, deploy any resource, create any subscription, read any workload data, or send anything anywhere |
 | **Costs** | Nothing. Quota is permission to allocate, not capacity. No resource is created that bills |
 
-Every write is reversed by the teardown step, and every step asks before it runs.
+Every write is reversed by the teardown step, and every step asks before it
+runs.
+
+> **How to know in one read whether this will work at all.** Membership is
+> refused with HTTP 400 and *"QuotaId does not contain EnterpriseAgreement or
+> Internal"*. That is a substring test on `subscriptionPolicies.quotaId`, which
+> step 0 reads before anything is attempted. `PayAsYouGo_2014-09-01` and
+> `MSDN_2014-09-01` both fail, measured. Creating and reading a group are **not**
+> gated; only membership is.
+
+> **It uses the quota group you already have.** It does not create one, and it
+> will not delete one. If you have no group at all and want to try this in a
+> sandbox, `scripts/New-SandboxGroup.ps1` stands one up; it is deliberately
+> outside the numbered run.
 
 > **Quota is not capacity.** Moving quota out of a subscription does not stop a
 > running virtual machine. It stops that subscription **creating new ones**
@@ -70,9 +83,11 @@ Every write is reversed by the teardown step, and every step asks before it runs
 
 | Need | Detail |
 |---|---|
-| Billing account | EA, MCA-Enterprise or Internal. The agent checks this first and stops if it is not |
+| Billing account | EA, MCA-Enterprise or Internal |
+| Subscription `quotaId` | Must contain `EnterpriseAgreement` or `Internal`. Step 0 reads it and says so. This is the test the API actually applies |
 | Subscriptions | **Two**, in the same tenant. One donor with spare vCPU quota, one target. Non-production |
-| Management group | One you can create resources under. The quota group is created here |
+| Quota group | **One you already have.** The collector joins it; it does not create one |
+| Management group | The one your quota group sits under |
 | Roles | See [Permissions](#permissions) |
 | Tools | Azure CLI 2.60+, PowerShell 7+, and VS Code with GitHub Copilot |
 | Time | About 90 minutes. Most of it is waiting for Azure to process quota operations |
@@ -87,7 +102,6 @@ is missing.
 | `Reader` | Both subscriptions | Step 0 |
 | `Quota Request Operator` | Both subscriptions | Step 0 |
 | `GroupQuota Request Operator` | The management group | Step 3 |
-| `Management Group Contributor` | The management group | Step 3 |
 
 `GroupQuota Request Operator` is the role that carries the group quota write
 permissions. Confirming its exact definition is itself one of the things this
@@ -140,12 +154,12 @@ of the thing before you approve any write.
 | 0 | Preflight | No | Is this account eligible, and do you hold the roles |
 | 1 | Discover | No | Which management groups, subscriptions and quota groups exist now |
 | 2 | Read a group | No | What the group snapshot APIs return, field by field |
-| 3 | Create a group | **Yes** | Can a group be created by API, and what comes back |
+| 3 | Join the group | **Yes** | Does membership work, and what does enforcement take |
 | 4 | Fill the group | **Yes** | Does moving idle quota out of a subscription work without a ticket |
 | 5 | Allocate | **Yes** | Does allocation change the target's quota, and how long does it take |
 | 6 | Failure modes | **Yes** | What the errors look like when it is refused |
 | 7 | IaC reachability | No | Which azapi types and versions work, and what they accept |
-| 8 | Teardown | **Yes** | Put the quota back and remove the group |
+| 8 | Teardown | **Yes** | Put the quota back and remove only what step 3 added |
 | 9 | Package | No | Redact, hash and bundle the results |
 
 Steps 3 to 6 and 8 change your tenant. Steps 0 to 2, 7 and 9 do not.
@@ -188,13 +202,36 @@ agent.
 Steps 0, 1, 2, 7 and 9 were run end to end against a live Azure tenant, and
 `Compare-Baseline.ps1` with them. They work.
 
-**Steps 3, 4, 5, 6 and 8 have never been run.** The AQV maintainers cannot
-create a quota group, so every write in them is built from the shapes the read
-APIs return and from Microsoft's documentation. At least one call may be wrong.
+**Steps 3, 4, 5, 6 and 8 have never been run against an eligible account.**
+Every write in them is built from the shapes the read APIs return and from
+Microsoft's documentation. At least one call may be wrong.
+
+Two writes *have* been exercised, on an ordinary tenant:
+
+- **Membership** is refused synchronously, HTTP 400 in about 1.2 seconds, with
+  the quotaId message above. Step 3 handled it correctly: it recorded the error
+  and added nothing.
+- **Enforcement** is accepted, HTTP 201 with an async operation header, and then
+  never lands. Twenty minutes later nothing had changed. So a 201 there proves
+  nothing, which is why the findings file asks for the polled result rather than
+  the body.
 
 That is expected, and it is why the agent is told not to work around a failure.
 A verbatim error from a call that did not work is worth more than a call that
 was quietly edited until it did.
+
+## If you have no quota group
+
+`scripts/New-SandboxGroup.ps1` creates one. It is not part of the numbered run,
+it refuses if a group of that name already exists, and step 8 will not delete
+what it makes unless you ask with `-DeleteSandboxGroup`.
+
+```powershell
+./scripts/New-SandboxGroup.ps1 -ManagementGroupId <mg> -GroupName aqvsandbox
+```
+
+A group name must match `^[a-z][a-z0-9]*$`. Lower case letters and digits,
+starting with a letter, no hyphens.
 
 ## If something goes wrong
 

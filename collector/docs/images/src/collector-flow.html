@@ -39,6 +39,9 @@
   five that do are reversed by step 8. The agent prints what a step will do
   <b>before</b> it does it, and will not start until the exact phrase comes back.
   An approval never carries to the next step.
+  <br><br>
+  It works against the quota group you <b>already have</b>. It never creates one
+  and never deletes one.
 </p>
 
 <div class="head">
@@ -64,9 +67,9 @@
   <div class="ans">What the group APIs return, field by field. Against a group that already holds quota this answers most of the file</div>
 
   <div class="num w"><span>3</span></div>
-  <div class="what"><img class="ico" src="{{icon:quotas}}" alt=""><span class="t">Create a group</span></div>
+  <div class="what"><img class="ico" src="{{icon:mgroups}}" alt=""><span class="t">Join the group</span></div>
   <div><span class="badge write">writes</span></div>
-  <div class="ans">Can a group be created by API, what is <code>groupType</code>, and what does enforcement take</div>
+  <div class="ans">Adds both subscriptions to the group you <b>already have</b>. Creates nothing. With <code>-Enforce</code>, also answers what enforcement does</div>
 
   <div class="num w"><span>4</span></div>
   <div class="what"><img class="ico" src="{{icon:subs}}" alt=""><span class="t">Fill the group</span></div>
@@ -91,7 +94,7 @@
   <div class="num w"><span>8</span></div>
   <div class="what"><img class="ico" src="{{icon:subs}}" alt=""><span class="t">Teardown</span></div>
   <div><span class="badge write">writes</span></div>
-  <div class="ans">Puts every changed family back to the step 0 baseline and removes the group. Safe to run at any point</div>
+  <div class="ans">Puts every changed family back to the step 0 baseline and removes only the members step 3 added. <b>Never deletes your group</b></div>
 
   <div class="num"><span>9</span></div>
   <div class="what"><img class="ico" src="{{icon:location}}" alt=""><span class="t">Package</span></div>
@@ -129,6 +132,10 @@
       touched. Step 8 works from that baseline, so it does not care which steps
       ran or whether one failed halfway. <code>Compare-Baseline.ps1</code>
       answers &ldquo;is it back&rdquo; at any point, including days later.
+      <br><br>
+      Step 8 removes only the subscriptions step 3 added, recorded at the time.
+      A member that was in the group before the run stays in it, and the group
+      itself is never deleted.
       <br><br>
       The agent may only run the scripts in <code>scripts/</code>. It cannot
       write a new one, cannot edit one to make a call succeed, and cannot run

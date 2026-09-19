@@ -104,16 +104,29 @@ function Invoke-AqvApi {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ValidateSet('GET', 'PUT', 'PATCH', 'POST', 'DELETE')][string]$Method,
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$ApiVersion,
+        [string]$Path,
+        [string]$ApiVersion,
         [object]$Body,
+        # An absolute URL to call EXACTLY as given, instead of Path plus
+        # ApiVersion. Azure's Location and Azure-AsyncOperation headers carry a
+        # signed query string; rewriting any part of it fails the signature
+        # check with AuthorizationFailed, which reads like a permissions problem
+        # and is not one.
+        [string]$Url,
         # Why this call is being made. Goes into the capture so the package
         # reads as a narrative rather than as a log.
         [string]$Purpose = ''
     )
 
-    $sep = if ($Path.Contains('?')) { '&' } else { '?' }
-    $uri = "{0}{1}{2}api-version={3}" -f $script:Arm, $Path, $sep, $ApiVersion
+    if ($Url) {
+        $uri = $Url
+    }
+    else {
+        if (-not $Path) { throw 'Invoke-AqvApi needs either -Path or -Url.' }
+        if (-not $ApiVersion) { throw 'Invoke-AqvApi needs -ApiVersion when -Path is used.' }
+        $sep = if ($Path.Contains('?')) { '&' } else { '?' }
+        $uri = "{0}{1}{2}api-version={3}" -f $script:Arm, $Path, $sep, $ApiVersion
+    }
 
     $headers = @{
         Authorization  = "Bearer $(Get-AqvToken)"
@@ -159,7 +172,9 @@ function Invoke-AqvApi {
     $record = [ordered]@{
         purpose     = $Purpose
         method      = $Method
-        path        = $Path
+        # A signed poll URL carries t/c/s/h parameters that are a credential,
+        # not evidence. The path is what a reader needs.
+        path        = if ($Url) { ($Url -replace '\?.*$', '') -replace '^https://management\.azure\.com', '' } else { $Path }
         api_version = $ApiVersion
         request     = if ($null -ne $Body) { $Body } else { $null }
         status      = $status
@@ -198,8 +213,11 @@ function Wait-AqvOperation {
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$ApiVersion,
+        [string]$Path,
+        [string]$ApiVersion,
+        # The Location or Azure-AsyncOperation header, verbatim. Preferred:
+        # it already carries its own api-version and signature.
+        [string]$Url,
         [int]$TimeoutSeconds = 900,
         [int]$IntervalSeconds = 15,
         [string]$Purpose = 'poll'
@@ -210,7 +228,12 @@ function Wait-AqvOperation {
     $terminal = @('Succeeded', 'Failed', 'Canceled', 'Cancelled')
 
     while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-        $r = Invoke-AqvApi -Method GET -Path $Path -ApiVersion $ApiVersion -Purpose $Purpose
+        $r = if ($Url) {
+            Invoke-AqvApi -Method GET -Url $Url -Purpose $Purpose
+        }
+        else {
+            Invoke-AqvApi -Method GET -Path $Path -ApiVersion $ApiVersion -Purpose $Purpose
+        }
 
         $state = $null
         if ($r.Body) {
@@ -318,16 +341,12 @@ function Invoke-AqvAllocation {
     # for a write that Azure recorded as succeeded, so the poll is the answer
     # and the submit is not.
     if ($r.Status -eq 202) {
-        $pollPath = $null
+        $pollUrl = $null
         foreach ($h in @('Azure-AsyncOperation', 'Location')) {
-            if ($r.Headers[$h]) {
-                # Strip the host and the api-version; Invoke-AqvApi adds both.
-                $pollPath = ($r.Headers[$h] -replace '^https://management\.azure\.com', '') -replace '[?&]api-version=[^&]*', ''
-                break
-            }
+            if ($r.Headers[$h]) { $pollUrl = $r.Headers[$h]; break }
         }
-        if ($pollPath) {
-            $w = Wait-AqvOperation -Path $pollPath -ApiVersion $ApiVersion `
+        if ($pollUrl) {
+            $w = Wait-AqvOperation -Url $pollUrl `
                 -TimeoutSeconds $TimeoutSeconds -Purpose "$Purpose (poll)"
             $result.poll_states = $w.States
             $result.poll_ms = $w.DurationMs
