@@ -1,0 +1,8 @@
+# Everything a run produces. Captures hold real subscription IDs until step 9
+# redacts them, so none of it belongs in git.
+output/
+
+# Terraform, if step 7 leaves any behind outside output/
+.terraform/
+*.tfstate
+*.tfstate.*

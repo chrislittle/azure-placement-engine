@@ -1,0 +1,276 @@
+<meta charset="utf-8">
+<!--
+  Source for docs/images/quota-group-architecture.png. Render with render.ps1,
+  then trim the trailing whitespace to the content height.
+
+  Fonts: Segoe UI (Windows). Palette is Fluent - #243A5E navy, #201F1E / #605E5C
+  text, #EDEBE9 borders, #0078D4 / #107C10 / #6E5494 / #CA5010 accents.
+
+  Icons are Microsoft's Azure architecture icons, substituted at render time.
+  They are not in this repository. See render.ps1.
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1180px; padding: 32px; background: #fff;
+    font-family: 'Segoe UI', system-ui, sans-serif; color: #201F1E;
+    -webkit-font-smoothing: auto;
+  }
+  h1 {
+    font-size: 21px; font-weight: 700; color: #243A5E;
+    letter-spacing: -.2px; line-height: 1.2;
+    padding-bottom: 9px; border-bottom: 2px solid #EDEBE9;
+  }
+  .lede { margin-top: 12px; font-size: 13px; color: #605E5C; line-height: 1.55; max-width: 940px; }
+
+  .head { display: flex; align-items: center; gap: 12px; height: 20px; margin: 26px 0 13px; }
+  .head-title { font-size: 15px; font-weight: 700; color: #243A5E; }
+  .pill {
+    font-size: 10.5px; font-weight: 700; line-height: 1;
+    padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill.blue   { color: #1E40AF; background: #EDF2FB; }
+  .pill.green  { color: #0B6A0B; background: #EDF6ED; }
+  .pill.orange { color: #8A3B0B; background: #FDF3EC; }
+
+  .card {
+    border: 1px solid #EDEBE9; border-radius: 8px; background: #fff;
+    padding: 12px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.045);
+  }
+  .card.blue   { border-left: 5px solid #0078D4; }
+  .card.green  { border-left: 5px solid #107C10; }
+  .card.purple { border-left: 5px solid #6E5494; }
+  .card.orange { border-left: 5px solid #CA5010; }
+  .card.dashed {
+    border: 2px dashed #D2D0CE; background: #FCFCFC; box-shadow: none; padding: 11px 15px;
+  }
+  .title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .card-title { font-size: 15px; font-weight: 700; }
+  .card-body  { font-size: 12px; color: #605E5C; line-height: 1.5; }
+  .ico { width: 18px; height: 18px; flex: 0 0 18px; }
+  .tag {
+    font-size: 9.5px; font-weight: 700; line-height: 1; letter-spacing: .2px;
+    padding: 4px 7px; border-radius: 4px; color: #605E5C; background: #F3F2F1;
+    text-transform: uppercase;
+  }
+  .tag.todo { color: #8A3B0B; background: #FDF3EC; }
+  .tag.now  { color: #0B6A0B; background: #EDF6ED; }
+
+  .row { display: grid; grid-template-columns: 1fr 120px 1fr 120px 1fr; align-items: stretch; }
+  .row .card { display: flex; flex-direction: column; justify-content: center; }
+  .conn { text-align: center; font-size: 11px; color: #605E5C; line-height: 1.45; padding: 0 6px;
+          display: flex; flex-direction: column; justify-content: center; }
+  .conn .glyph { display: block; font-size: 13px; color: #A19F9D; margin-bottom: 2px; }
+  .conn.pending .glyph { color: #CA5010; }
+
+  .pool { margin-top: 26px; display: grid; grid-template-columns: 300px 1fr; gap: 28px; align-items: stretch; }
+  .arrowcol { display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+  .arrow { font-size: 12px; color: #605E5C; display: flex; align-items: center; gap: 8px; }
+  .arrow b { color: #201F1E; }
+
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 12px; }
+
+  .caption { margin-top: 28px; font-size: 12px; color: #605E5C; line-height: 1.6; max-width: 1050px; }
+  code {
+    font-family: Consolas, 'Cascadia Mono', monospace; font-size: .93em;
+    background: #F3F2F1; padding: 1px 5px; border-radius: 3px; color: #3B3A39;
+  }
+  .split { display: flex; align-items: center; gap: 12px; height: 34px; font-size: 11px;
+           font-weight: 700; color: #605E5C; }
+  .split::before, .split::after { content: ''; flex: 1; height: 1px; background: #EDEBE9; }
+</style>
+
+<h1>Where a quota group sits in Azure Quota Vending</h1>
+
+<p class="lede">
+  Stage 1 creates the subscription. Stage 2 gives it quota. Today that quota can
+  only come from what the subscription already holds, so a request above its
+  limit is refused. The quota group is the pool stage 2 is meant to draw from,
+  and it is <b>not built yet</b> &mdash; everything dashed and orange below is the
+  work this collector exists to make possible.
+</p>
+
+<div class="head">
+  <span class="head-title">The pool</span>
+  <span class="pill orange">not built</span>
+</div>
+
+<div class="pool">
+  <div class="card dashed">
+    <div class="title-row">
+      <img class="ico" src="{{icon:mgroups}}" alt="">
+      <span class="card-title">Management group</span>
+    </div>
+    <div class="card-body">
+      Holds the group object. Membership is <b>not</b> inherited from the
+      hierarchy, so this is an access-control choice and nothing else.
+    </div>
+    <div style="height:14px"></div>
+    <div class="title-row">
+      <img class="ico" src="{{icon:quotas}}" alt="">
+      <span class="card-title">Quota group</span>
+      <span class="tag todo">to build</span>
+    </div>
+    <div class="card-body">
+      <code>Microsoft.Quota/groupQuotas</code><br>
+      Filled by moving idle quota out of subscriptions that are not using it.
+      Allocating from it is self-service and succeeds.
+    </div>
+  </div>
+
+  <div>
+    <div class="three">
+      <div class="card orange">
+        <div class="title-row">
+          <img class="ico" src="{{icon:subs}}" alt="">
+          <span class="card-title">Idle subscription</span>
+        </div>
+        <div class="card-body">Sits on quota nobody is using. Gives it up, self-service.</div>
+      </div>
+      <div class="card dashed">
+        <div class="title-row">
+          <img class="ico" src="{{icon:quotas}}" alt="">
+          <span class="card-title">The pool</span>
+        </div>
+        <div class="card-body">Cores held at group level, ready to hand out.</div>
+      </div>
+      <div class="card green">
+        <div class="title-row">
+          <img class="ico" src="{{icon:subs}}" alt="">
+          <span class="card-title">Newly vended</span>
+        </div>
+        <div class="card-body">Arrives with 10 vCPUs. Needs more, now.</div>
+      </div>
+    </div>
+
+    <div class="split">both directions are the same API call, with a different number</div>
+
+    <div class="card">
+      <div class="card-body">
+        <b>Why a pool and not a support request.</b> Allocating from a group needs
+        no Microsoft involvement and succeeds. Asking Azure to raise a
+        per-subscription limit is evaluated, often refused, and cannot be the
+        thing a vending pipeline depends on. That is why AQV does not ask.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="head">
+  <span class="head-title">Stage 2, today</span>
+  <span class="pill green">built and working</span>
+</div>
+
+<div class="row">
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:quotas}}" alt="">
+      <span class="card-title">aqv-read</span>
+      <span class="tag now">now</span>
+    </div>
+    <div class="card-body">
+      Quota, SKU availability, region and zone access.
+      <code>available</code> is null with no group, so nothing is allocatable.
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span>quota and<br>access state</div>
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:workflow}}" alt="">
+      <span class="card-title">aqv-decide</span>
+      <span class="tag now">now</span>
+    </div>
+    <div class="card-body">
+      Picks a family that the existing quota, or a pool behind it, already
+      covers. Otherwise <code>infeasible</code>.
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span>writes<br>required</div>
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:quotas}}" alt="">
+      <span class="card-title">aqv-apply</span>
+      <span class="tag now">now</span>
+    </div>
+    <div class="card-body">
+      Writes the regional cap. Will write the allocation once the group layer
+      exists.
+    </div>
+  </div>
+</div>
+
+<div class="head">
+  <span class="head-title">After the handover</span>
+  <span class="pill blue">the workload team</span>
+</div>
+
+<div class="row">
+  <div class="card green">
+    <div class="title-row">
+      <img class="ico" src="{{icon:subs}}" alt="">
+      <span class="card-title">The subscription</span>
+    </div>
+    <div class="card-body">Has quota, a named family, and the sizes inside it that fit.</div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span>decision.json</div>
+  <div class="card green">
+    <div class="title-row">
+      <img class="ico" src="{{icon:vm}}" alt="">
+      <span class="card-title">Their own IaC</span>
+    </div>
+    <div class="card-body">Deploys the workload. <b>Nothing in AQV deploys anything.</b></div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span>any time,<br>read only</div>
+  <div class="card">
+    <div class="title-row">
+      <img class="ico" src="{{icon:location}}" alt="">
+      <span class="card-title">What can I deploy?</span>
+    </div>
+    <div class="card-body">Asks the subscription as it is now. Needs only <code>Reader</code>.</div>
+  </div>
+</div>
+
+<div class="head"><span class="head-title">What it takes to operate</span></div>
+
+<div class="three">
+  <div class="card purple">
+    <div class="title-row">
+      <img class="ico" src="{{icon:roles}}" alt="">
+      <span class="card-title">GroupQuota Request Operator</span>
+    </div>
+    <div class="card-body">
+      <code>e2217c0e-04bb-4724-9580-91cf9871bc01</code><br>
+      Carries the group operations <b>and</b>
+      <code>Microsoft.Quota/quotas/write</code>, so it covers both halves of the
+      write path. No <code>Microsoft.Support/*</code>.
+    </div>
+  </div>
+  <div class="card purple">
+    <div class="title-row">
+      <img class="ico" src="{{icon:mgroups}}" alt="">
+      <span class="card-title">Eligibility</span>
+    </div>
+    <div class="card-body">
+      EA, MCA-Enterprise or Internal billing account. IaaS compute only, public
+      cloud only. A subscription belongs to <b>one</b> group at a time.
+    </div>
+  </div>
+  <div class="card orange">
+    <div class="title-row">
+      <img class="ico" src="{{icon:location}}" alt="">
+      <span class="card-title">Enforcement</span>
+      <span class="tag todo">unknown</span>
+    </div>
+    <div class="card-body">
+      The aggregate usage read refuses on an unenforced group. Nothing Microsoft
+      publishes explains what enforcement is. The collector's first job.
+    </div>
+  </div>
+</div>
+
+<div class="caption">
+  A quota group solves quota. It does not solve access: a subscription without
+  regional or zonal access fails both the allocation and the deployment, however
+  many cores are pointed at it. That is why <code>aqv-decide</code> checks access
+  before quota and will keep doing so.
+</div>

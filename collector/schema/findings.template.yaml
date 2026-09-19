@@ -1,0 +1,407 @@
+# AQV quota group findings.
+#
+# Copy this to output/findings.yaml at the start of a run. The agent fills in
+# `answer` and `capture` as the steps produce them.
+#
+# WHY THESE QUESTIONS AND NOT OTHERS
+#
+# On 2026-09-19 the AQV maintainers read a real quota group from an ordinary
+# tenant. Reads work without an eligible billing account, so the shape of the
+# APIs is already known and is recorded under `verified_reads` in
+# knowledge/quota-groups.yaml. Those questions are not repeated here.
+#
+# What could not be done is anything involving a group that HOLDS QUOTA, and
+# anything that WRITES. That is what this file asks about, and it is all it
+# asks about. Nothing here is a question that could have been answered by
+# reading an empty group.
+#
+# Rules for filling this in:
+#   answer            what the API returned. Verbatim names, casing and numbers.
+#   capture           the file under captures/ that proves it. Required.
+#   contradicts       what we currently believe, when the answer differs.
+#   notes             anything the next engineer needs and cannot infer.
+#
+# An unanswered question stays `answer: null`. Do not guess, and do not copy an
+# answer out of Microsoft's documentation.
+
+run:
+  collected_by: null          # partner organisation, or a name
+  date: null                  # YYYY-MM-DD
+  billing_account_type: null  # EA | MCA-Enterprise | Internal
+  regions_tested: []
+  families_tested: []
+  steps_run: []
+  az_cli_version: null
+
+# ---------------------------------------------------------------------------
+# A. Enforcement                                                (steps 2, 3)
+#
+# The biggest unknown. locationUsages refuses with HTTP 405 "supported for
+# enforced groups only", and locationSettings 404s with "EnforcementStatus is
+# not found". Neither word appears in Microsoft's quota group documentation.
+# Nothing can be designed until this is understood.
+# ---------------------------------------------------------------------------
+enforcement:
+  - id: A1
+    question: >
+      What does PUT or PATCH on
+      groupQuotas/{group}/resourceProviders/Microsoft.Compute/locationSettings/{location}
+      accept? Give the exact body that sets enforcement on.
+    unblocks: Everything below it. An unenforced group cannot be read in aggregate.
+    answer: null
+    capture: null
+
+  - id: A2
+    question: >
+      What are the valid values of enforcement status, and what does the
+      resource look like once it is set?
+    unblocks: Whether AQV has to check enforcement before trusting a group read.
+    answer: null
+    capture: null
+
+  - id: A3
+    question: >
+      Does allocation work on a group that is NOT enforced, or does enforcement
+      gate the write as well as the aggregate read?
+    unblocks: >
+      Whether enforcement is a prerequisite AQV must assert, or only affects
+      reporting.
+    answer: null
+    capture: null
+    notes: Try one allocation before enforcing and one after. Record both.
+
+  - id: A4
+    question: Can enforcement be turned off again, and what happens to allocations?
+    unblocks: Whether a platform can back out of this safely.
+    answer: null
+    capture: null
+
+  - id: A5
+    question: >
+      What is `groupType`? An unenforced group read as `AllocationGroup`. Is
+      there another value, and is it chosen at creation or by enforcing?
+    unblocks: Which kind of group AQV should tell a platform team to create.
+    answer: null
+    capture: null
+
+# ---------------------------------------------------------------------------
+# B. A group that holds quota                                   (steps 2, 4)
+#
+# Every read so far was against an empty group, so every number was zero or
+# absent. These need a group with cores in it.
+# ---------------------------------------------------------------------------
+holding:
+  - id: B1
+    question: >
+      What does groupQuotaLimits/{location} return when the group HOLDS quota?
+      Give the full body. An empty group returns `{}`.
+    unblocks: aqv-read's group data source.
+    answer: null
+    capture: null
+
+  - id: B2
+    question: >
+      Which field is the allocatable headroom -- the number that becomes
+      quota.families[*].available in AQV? Name it, and give the arithmetic that
+      produced it.
+    unblocks: >
+      The input that makes aqv-decide return needs_allocation instead of
+      infeasible. This is the contract AQV already has and cannot fill.
+    answer: null
+    capture: null
+    notes: >
+      Our reading says availableLimit is distributable and `limit` is what was
+      stamped by approved increases. Confirm against real numbers rather than
+      accepting it.
+
+  - id: B3
+    question: >
+      What is `shareableQuota` on quotaAllocations once the group holds cores?
+      It reads 0 on every family in an empty group.
+    unblocks: Whether it is the per-subscription contribution or something else.
+    answer: null
+    capture: null
+
+  - id: B4
+    question: >
+      Is `quotaAllocated` negative for a subscription that gave quota to the
+      group? Show one subscription before and after step 4.
+    unblocks: >
+      Arithmetic in aqv-read. A sign error silently doubles or zeroes the
+      computed headroom.
+    answer: null
+    capture: null
+
+  - id: B5
+    question: >
+      Does locationUsages tell you WHICH subscription holds idle quota, or only
+      the group aggregate?
+    unblocks: >
+      Harvesting unused quota. If it is aggregate only, that needs a fan-out
+      read of every member subscription.
+    answer: null
+    capture: null
+
+  - id: B6
+    question: >
+      Do the family names in groupQuotaLimits and locationUsages use the same
+      all-lowercase convention as quotaAllocations?
+    unblocks: How many places AQV has to normalise case.
+    answer: null
+    capture: null
+    notes: >
+      quotaAllocations returns standardav2family where Microsoft.Compute returns
+      StandardDsv6Family. Confirm whether every group API agrees with
+      quotaAllocations, or whether they differ from each other too.
+
+# ---------------------------------------------------------------------------
+# C. Membership                                                 (steps 3, 6)
+# ---------------------------------------------------------------------------
+membership:
+  - id: C1
+    question: >
+      What adds a subscription to a group, and what does the operation return?
+    unblocks: Whether vending has to add the new subscription before it can allocate.
+    answer: null
+    capture: null
+
+  - id: C2
+    question: >
+      Does a subscription have to be a member before quotaAllocations can be
+      written to it? The READ works on a non-member and returns that
+      subscription's own quota.
+    unblocks: A precondition check, and a clearer error than Azure gives.
+    answer: null
+    capture: null
+
+  - id: C3
+    question: What is the error when a subscription is already in another group?
+    unblocks: The same check.
+    answer: null
+    capture: null
+
+  - id: C4
+    question: >
+      Does the subscriptions list still return both `value` and `values` once it
+      is non-empty, and do they hold the same thing?
+    unblocks: Which key aqv-read parses.
+    answer: null
+    capture: null
+
+# ---------------------------------------------------------------------------
+# D. Allocation, the operation vending depends on               (step 5)
+# ---------------------------------------------------------------------------
+allocation:
+  - id: D1
+    question: >
+      The exact PATCH body for quotaAllocations, and the full response including
+      Location, Azure-AsyncOperation and Retry-After headers.
+    unblocks: aqv-apply's group write.
+    answer: null
+    capture: null
+
+  - id: D2
+    question: >
+      Is `limit` the subscription's new TOTAL, or an amount added to what it
+      already has?
+    unblocks: >
+      Everything. AQV models quota as absolute desired state because
+      Microsoft.Quota is absolute. If group allocation is a delta, aqv-apply is
+      a different shape and is not idempotent.
+    answer: null
+    capture: null
+    notes: >
+      Test it. Allocate the same absolute number twice. If the limit doubles it
+      is a delta; if it stays put it is absolute.
+
+  - id: D3
+    question: Is the same PATCH, issued twice with the same value, accepted?
+    unblocks: >
+      Whether aqv-apply can re-run. A pipeline that cannot re-run is not usable
+      in vending.
+    answer: null
+    capture: null
+
+  - id: D4
+    question: >
+      Which endpoint actually polls an allocation to completion, and what is the
+      state sequence?
+    unblocks: The poll loop in aqv-apply and its PowerShell twin.
+    answer: null
+    capture: null
+    notes: >
+      GET on quotaAllocationRequests returns HTTP 500 UnknownFailure on
+      2025-09-01 and 2025-07-15 against an empty group. Find the shape that
+      works: the id form, a filter, or quotaAllocationOperationsStatus.
+
+  - id: D5
+    question: How long does an allocation take? Record every attempt.
+    unblocks: >
+      Timeouts. A per-subscription quota write took 3m37s to succeed and about
+      35 seconds to fail, so a short timeout fails the good case first.
+    answer: null
+    capture: null
+
+  - id: D6
+    question: >
+      After an allocation succeeds, how long until
+      Microsoft.Compute/locations/{region}/usages reports the new limit?
+    unblocks: >
+      Whether a vending pipeline can allocate and then read in the same run.
+      AQV reads that API, not the group API, to decide.
+    answer: null
+    capture: null
+    notes: Measure it in seconds. This decides whether stage 2 needs a retry loop.
+
+  - id: D7
+    question: Does allocation work to a region the subscription has no access to?
+    unblocks: >
+      Confirms the two-gate model. AQV checks access before quota on the
+      assumption that group quota does not grant regional access.
+    answer: null
+    capture: null
+    contradicts: null
+
+# ---------------------------------------------------------------------------
+# E. Moving quota INTO the group                                (step 4)
+# ---------------------------------------------------------------------------
+harvesting:
+  - id: E1
+    question: >
+      Does moving quota out of a subscription into the group succeed without
+      Microsoft involvement, and how long does it take?
+    unblocks: >
+      The whole self-service story. If this needs a ticket, quota groups do not
+      solve the problem AQV was built for.
+    answer: null
+    capture: null
+
+  - id: E2
+    question: >
+      Does moving quota out below the subscription's current USED value succeed,
+      fail, or silently clamp?
+    unblocks: >
+      A safety rule in the rebalance module. Harvesting must never strand a
+      running workload.
+    answer: null
+    capture: null
+    notes: >
+      Only run this if the donor has running vCPUs to test against. If it has
+      none, record that the case was not exercised rather than reasoning about it.
+
+  - id: E3
+    question: Is it the same API as allocation, with a lower number?
+    unblocks: Whether aqv-apply needs one code path or two.
+    answer: null
+    capture: null
+
+# ---------------------------------------------------------------------------
+# F. Refusals                                                   (step 6)
+# ---------------------------------------------------------------------------
+refusals:
+  - id: F1
+    question: Allocating more than the group holds. Status, code, message.
+    unblocks: aqv-decide must predict this rather than let the apply fail.
+    answer: null
+    capture: null
+
+  - id: F2
+    question: >
+      Allocating for a family under the July 2026 capacity growth restrictions.
+    unblocks: >
+      Whether the lifecycle gate applies to the group path, or whether group
+      quota routes around a growth restriction.
+    answer: null
+    capture: null
+    notes: >
+      Use a family from knowledge/vm-series-lifecycle.yaml. A significant
+      finding either way.
+
+  - id: F3
+    question: Is any refusal retryable? Does the same request ever succeed later?
+    unblocks: Retry policy. AQV treats every quota refusal as terminal today.
+    answer: null
+    capture: null
+
+# ---------------------------------------------------------------------------
+# G. quotaTransfers, a second mechanism                         (step 7)
+#
+# Microsoft.Quota exposes quotaTransfers and incomingQuotaTransfers at
+# 2026-09-01-preview and -alpha. Both read 200 with an empty list on an ordinary
+# subscription. No documentation we have found covers them. They are scoped to a
+# SUBSCRIPTION, not a management group, so if they are self-service they may
+# suit AQV better than quota groups.
+# ---------------------------------------------------------------------------
+transfers:
+  - id: G1
+    question: >
+      What does a quotaTransfers object look like, and what does creating one
+      take?
+    unblocks: Whether AQV should build on this instead of, or as well as, groups.
+    answer: null
+    capture: null
+
+  - id: G2
+    question: >
+      Is a transfer subscription-to-subscription, and does it need a management
+      group or a group object at all?
+    unblocks: Whether the management group prerequisite can be dropped.
+    answer: null
+    capture: null
+
+  - id: G3
+    question: Does it need approval from the receiving subscription?
+    unblocks: >
+      incomingQuotaTransfers implies a two-sided handshake. If it does, that is
+      a different automation shape from a one-sided allocation.
+    answer: null
+    capture: null
+
+  - id: G4
+    question: Is it available on the partner's billing account type at all?
+    unblocks: Whether this is worth any further time.
+    answer: null
+    capture: null
+
+# ---------------------------------------------------------------------------
+# H. Infrastructure as code                                     (step 7)
+# ---------------------------------------------------------------------------
+iac:
+  - id: H1
+    question: >
+      Does azapi accept a body for quotaAllocations, or only name, parent_id and
+      type?
+    unblocks: >
+      Whether allocation is expressible as Terraform desired state at all. With
+      no body the write is fire-and-forget and aqv-apply needs a
+      read-compare-write shape instead.
+    answer: null
+    capture: null
+    notes: >
+      Every groupQuotas child type supports the same api-version set:
+      2025-09-01, 2025-07-15, 2025-03-01, 2024-12-18-preview, 2024-10-15-preview,
+      2023-06-01-preview. Pin 2025-09-01 unless something argues otherwise.
+
+  - id: H2
+    question: >
+      Does a second `terraform apply` with no change produce an empty plan, or
+      re-issue the request?
+    unblocks: >
+      Whether the module converges. A resource that re-issues on every run is
+      not usable in a pipeline that runs on every push.
+    answer: null
+    capture: null
+
+  - id: H3
+    question: Is there an azurerm resource for any of this yet?
+    unblocks: Whether to build on azapi or wait.
+    answer: null
+    capture: null
+
+# ---------------------------------------------------------------------------
+# I. Anything the run found that this file did not ask about
+#
+# Enforcement and quotaTransfers were both found this way, by reading an error
+# message carefully rather than by looking for them. Add anything similar here.
+# ---------------------------------------------------------------------------
+unprompted: []

@@ -3,14 +3,213 @@
 # The feature's pitch is "self-service quota without support tickets". That is
 # true of one operation and not the other, and the difference decides what AQV
 # can promise at vending time.
-reviewed: 2026-09-16
+reviewed: 2026-09-19
 source: >
   Microsoft Learn, read 2026-09-16:
   learn.microsoft.com/azure/quotas/quota-groups
   learn.microsoft.com/azure/quotas/transfer-quota-groups
   learn.microsoft.com/azure/quotas/quota-group-limit-increase
-confidence: high
+
+  Plus live READ calls on 2026-09-19 against an existing group in an ordinary
+  tenant. Anything under `verified_reads` below came from the API. Everything
+  else is still documentation only.
+confidence: mixed -- see verified_reads
 recheck_after: 2026-12-31
+
+# Read on 2026-09-19 against a real Microsoft.Quota/groupQuotas object, on an
+# MCA-Individual tenant. The group existed and was readable. No write was
+# attempted, and the group holds no quota, so none of this covers what happens
+# when a group has cores in it.
+#
+# Several of these contradict what the rest of this file says. The contradictions
+# are marked. They are why the collector exists.
+verified_reads:
+  # --- The group object -------------------------------------------------
+  group_object:
+    path: GET /providers/Microsoft.Management/managementGroups/{mg}/providers/Microsoft.Quota/groupQuotas/{group}
+    returns: |
+      {"properties": {
+         "displayName": "HomeQG",
+         "groupType": "AllocationGroup",
+         "provisioningState": "Succeeded",
+         "additionalAttributes": {
+           "groupId": {"groupingIdType": "BillingId", "value": "temp-billing-id"},
+           "environment": "None"}},
+       "id": ".../groupQuotas/homeqg",
+       "type": "Microsoft.Quota/groupQuotas",
+       "name": "homeqg"}
+    note: >
+      `groupType: AllocationGroup` is an enum nobody documented. Paired with the
+      enforcement error below, there is at least one other kind of group, and the
+      two are not equally capable.
+
+  # --- THE ONE THAT BREAKS THINGS --------------------------------------
+  family_name_casing:
+    finding: >
+      quotaAllocations returns every resource name in ALL LOWERCASE.
+    measured: >
+      Both APIs returned 232 names for the same subscription and region. ONE
+      matched case sensitively. 231 of 232 differ by case alone.
+    side_by_side:
+      group_api:   [lowprioritycores, cores, virtualmachines, availabilitysets, virtualmachinescalesets]
+      compute_api: [lowPriorityCores, cores, virtualMachines, availabilitySets, virtualMachineScaleSets]
+    against: >
+      Microsoft.Compute/locations/{region}/usages returns camel case, and is
+      itself inconsistent between families: standardDFamily, StandardDsv6Family,
+      standardDSv5Family.
+    consequence: >
+      AQV keys every decision on the family name. A direct join between group
+      state and per-subscription quota WILL miss. Any group support has to
+      normalise case on both sides before comparing. This is answer B2 in the
+      collector, and it is the single most important thing found so far.
+    severity: blocking
+
+  # --- Reading an empty group ------------------------------------------
+  group_quota_limits:
+    path: GET {group}/resourceProviders/Microsoft.Compute/groupQuotaLimits/{location}
+    on_empty_group: 'HTTP 200 with body {} -- an empty object, not 404, not an error'
+    consequence: >
+      A client must read {} as "this group holds nothing", not as a failure and
+      not as "unknown". Treating it as unknown would make AQV fall back to
+      needs_increase when the right answer is that the pool is empty.
+    tested_api_versions: [2025-09-01, 2025-03-01, 2024-12-18-preview]
+    note: Identical empty response on all three.
+
+  quota_allocations_read:
+    path: >
+      GET /providers/Microsoft.Management/managementGroups/{mg}/subscriptions/{sub}
+      /providers/Microsoft.Quota/groupQuotas/{group}/resourceProviders/Microsoft.Compute
+      /quotaAllocations/{location}
+    returns_per_family: [resourceName, limit, 'name.value', 'name.localizedValue', shareableQuota]
+    observed: >
+      Returned every family with the SUBSCRIPTION's own limit and
+      shareableQuota: 0 throughout, on a subscription that is NOT a member of
+      the group. So this read does not prove membership and does not fail when
+      the subscription is outside the group.
+    consequence: >
+      Membership has to be checked through groupQuotas/{group}/subscriptions. A
+      successful quotaAllocations read is not evidence of anything.
+    unknown: What shareableQuota holds once a group actually has cores in it.
+
+  # --- Enforcement, which no doc we read mentions ----------------------
+  enforcement:
+    finding: >
+      GET locationUsages/{location} returns HTTP 405:
+      "Get Group Usages API is supported for enforced groups only. Please ensure
+      group '{group}' in location '{location}' is enforced and try again."
+    and: >
+      GET locationSettings/{location} returns HTTP 404 EntityNotFound:
+      "EnforcementStatus is not found for GroupId: {group}, MgId: {mg}".
+      The list form returns 200 with {"value": [], "nextLink": ""}.
+    consequence: >
+      There is a per-group, per-location enforcement state, set through
+      groupQuotas/{group}/resourceProviders/{rp}/locationSettings, and the
+      aggregate usage read does not work until it is on. Nothing in
+      learn.microsoft.com/azure/quotas/quota-groups covers this.
+    unknown: >
+      What enforcement changes besides unlocking that read, whether it is
+      required for allocation to work at all, and whether it can be turned off
+      again. The collector has to answer this before anything is designed.
+    severity: blocking
+
+  # --- Server errors on a documented type -------------------------------
+  quota_allocation_requests_500:
+    path: GET {group}/resourceProviders/Microsoft.Compute/quotaAllocationRequests
+    returns: 'HTTP 500 {"error": {"code": "UnknownFailure", "message": "The service has encountered an unknown internal failure"}}'
+    tested_api_versions: [2025-09-01, 2025-07-15]
+    note: >
+      Reproducible on both. Either the list form needs a filter it does not ask
+      for, or it does not work on a group with no requests. aqv-apply cannot
+      poll a request type whose list form 500s, so the collector must find the
+      working read shape.
+
+  group_quota_requests_filter:
+    path: GET {group}/groupQuotaRequests
+    without_filter: 'HTTP 400 {"error": {"code": "BadRequest", "message": "$filter not found in request query."}}'
+    with_filter: "HTTP 200 with ?$filter=location eq '{location}'"
+    note: The filter is mandatory and the error says so clearly.
+
+  subscriptions_list_shape:
+    path: GET {group}/subscriptions
+    returns: '{"value": [], "values": []}'
+    note: >
+      Both spellings, in the same body. Key on `value`; the duplicate suggests
+      schema churn and may not survive.
+
+  # --- A second mechanism nobody knew about -----------------------------
+  quota_transfers:
+    finding: >
+      Microsoft.Quota exposes quotaTransfers and incomingQuotaTransfers at
+      api-version 2026-09-01-preview and 2026-09-01-alpha. Both return HTTP 200
+      with {"value": []} on an ordinary subscription.
+    scope: subscription, not management group
+    consequence: >
+      This is a subscription-to-subscription transfer path that does not go
+      through a quota group at all. If it is self-service it may be a better
+      fit for AQV than group quotas, because it needs no management group and
+      no group object. It is also preview/alpha only.
+    unknown: Everything except that the endpoints exist and are readable.
+    severity: investigate
+
+  # --- The API version spread was wrong ---------------------------------
+  api_versions:
+    finding: >
+      GET /subscriptions/{sub}/providers/Microsoft.Quota lists every groupQuotas
+      child type with the SAME api-version set:
+      2025-09-01, 2025-07-15, 2025-03-01, 2024-12-18-preview, 2024-10-15-preview,
+      2023-06-01-preview.
+    contradicts: >
+      The iac_support block below, which records four types on four different
+      versions. That spread is azapi's schema index, not the service. The
+      service is consistent.
+    also: >
+      2026-09-01-preview does NOT exist for groupQuotas. The service names its
+      supported set in the 404, which is the quickest way to check.
+  # --- azapi, tested with terraform plan on 2026-09-19 ------------------
+  terraform_azapi:
+    provider: Azure/azapi >= 2.0, terraform 1.15.8
+    type_not_in_schema: >
+      Microsoft.Quota/groupQuotas/quotaAllocations@2025-09-01 is NOT in azapi's
+      embedded schema. terraform plan fails with "resource type
+      Microsoft.Quota/groupQuotas/quotaAllocations can't be found".
+    workaround: schema_validation_enabled = false on the resource block
+    body_accepted: >
+      WITH validation off, azapi accepts a full body -- properties.value[] with
+      resourceName and limit -- and terraform plan resolves cleanly.
+    contradicts: >
+      request_shaped_warning below, which says the published azapi schema
+      carries no body at all and that the write is therefore fire-and-forget.
+      It takes a body. The obstacle is the missing schema entry, not the shape
+      of the resource.
+    still_unknown: >
+      Whether the body is SENT correctly and whether a second plan is empty.
+      Only an apply against a real group answers that, which is question H2.
+
+  # --- Group naming, enforced by the azapi schema -----------------------
+  group_name_pattern:
+    pattern: '^[a-z][a-z0-9]*$'
+    finding: >
+      A quota group name must be lower case letters and digits, starting with a
+      letter. A hyphen is rejected: "name is invalid, string does not match
+      pattern ^[a-z][a-z0-9]*$".
+    note: >
+      Found by trying 'aqv-collector', which is the obvious name to reach for.
+      Nothing in the documentation mentions the constraint.
+
+    child_types:
+      - groupQuotas/groupQuotaLimits
+      - groupQuotas/quotaAllocations
+      - groupQuotas/quotaAllocationRequests
+      - groupQuotas/groupQuotaRequests
+      - groupQuotas/subscriptions
+      - groupQuotas/subscriptionRequests
+      - groupQuotas/locationSettings
+      - groupQuotas/locationUsages
+      - groupQuotas/groupOperationsStatus
+      - groupQuotas/groupQuotaOperationsStatus
+      - groupQuotas/quotaAllocationOperationsStatus
+      - groupQuotas/locationSettingsOperationsStatus
+      - groupQuotas/subscriptionRequestsOperationsStatus
 
 # The central distinction. Conflating these two would make AQV promise a
 # deployment it cannot deliver.
@@ -87,6 +286,45 @@ constraints:
     - GroupQuota Request Operator on the management group holding the group
     - Quota Request Operator on every participating subscription
     - Reader on every participating subscription (for portal visibility)
+
+# Read from the live role definition API on 2026-09-19, not from a doc page.
+# The role exists on an ordinary subscription, so its DEFINITION is visible
+# without an eligible billing account even though the feature is not usable.
+group_quota_role:
+  id: e2217c0e-04bb-4724-9580-91cf9871bc01
+  name: GroupQuota Request Operator
+  description: >
+    Read and create GroupQuota requests, get GroupQuota request status, and get
+    groupQuotaLimits.
+  assignable_scopes: ["/"]   # any scope, not management group only
+  not_actions: []
+  actions:
+    - Microsoft.Authorization/*/read
+    - Microsoft.Insights/alertRules/read
+    - Microsoft.Quota/quotas/write
+    - Microsoft.Quota/quotas/read
+    - Microsoft.Quota/usages/read
+    - Microsoft.Quota/quotaRequests/read
+    - Microsoft.Quota/register/action
+    - Microsoft.Quota/groupQuotas/*/read
+    - Microsoft.Quota/groupQuotas/*/write
+    - Microsoft.Quota/groupQuotas/*/delete
+  note: >
+    It carries Microsoft.Quota/quotas/write, which is the PER-SUBSCRIPTION write
+    that Quota Request Operator exists for. So the roles list above overstates
+    what is needed: this one role covers both halves of the write path. It does
+    NOT carry Microsoft.Support/*, so a refused request still needs a role that
+    can raise a ticket.
+
+    Whether it has to be assigned at the management group for the group
+    operations to work is not settled by the definition. assignableScopes is "/"
+    so it CAN be assigned anywhere; the group operations are scoped to the
+    management group, so an assignment at subscription scope would not cover
+    them. The collector's step 3 is what proves this.
+  verified: 2026-09-19
+  verified_how: >
+    GET /subscriptions/{sub}/providers/Microsoft.Authorization/roleDefinitions
+    ?$filter=roleName eq 'GroupQuota Request Operator', api-version 2022-04-01.
 
 # The group is a global ARM object under an MG, but membership is NOT synced
 # from the MG hierarchy -- subscriptions from any MG can join. So the MG you

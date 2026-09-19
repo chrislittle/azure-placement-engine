@@ -176,6 +176,7 @@ Testing it needs an EA, MCA-Enterprise or Internal billing account. Until then
 | `examples/vending-stage-2/` | The stage-2 pattern, with a sample request |
 | `examples/what-can-i-deploy/` | For application teams. Terraform or PowerShell, read-only, needs only Reader |
 | `knowledge/` | Curated facts no API returns — dated and sourced |
+| `collector/` | A GitHub Copilot agent a partner runs to collect quota group behaviour AQV cannot test |
 
 ## Known constraints
 

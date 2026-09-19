@@ -1,0 +1,192 @@
+<meta charset="utf-8">
+<!--
+  Source for docs/images/collector-flow.png. Render with render.ps1, then trim
+  the trailing whitespace to the content height.
+
+  Same palette and conventions as quota-group-architecture.html.
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1180px; padding: 32px; background: #fff;
+    font-family: 'Segoe UI', system-ui, sans-serif; color: #201F1E;
+    -webkit-font-smoothing: auto;
+  }
+  h1 {
+    font-size: 21px; font-weight: 700; color: #243A5E;
+    letter-spacing: -.2px; line-height: 1.2;
+    padding-bottom: 9px; border-bottom: 2px solid #EDEBE9;
+  }
+  .lede { margin-top: 12px; font-size: 13px; color: #605E5C; line-height: 1.55; max-width: 960px; }
+
+  .head { display: flex; align-items: center; gap: 12px; height: 20px; margin: 26px 0 12px; }
+  .head-title { font-size: 15px; font-weight: 700; color: #243A5E; }
+  .pill { font-size: 10.5px; font-weight: 700; line-height: 1; padding: 5px 10px; border-radius: 999px; }
+  .pill.green { color: #0B6A0B; background: #EDF6ED; }
+  .pill.red   { color: #A4262C; background: #FDF3F4; }
+
+  .steps { display: grid; grid-template-columns: 46px 1fr 132px 1fr; gap: 0 16px; }
+  .steps > div { padding: 11px 0; border-bottom: 1px solid #F3F2F1; }
+  .steps > div:nth-child(-n+4) { border-top: 1px solid #EDEBE9; }
+
+  .num {
+    font-size: 15px; font-weight: 700; color: #fff; text-align: center;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .num span {
+    width: 28px; height: 28px; border-radius: 6px; background: #107C10;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+  }
+  .num.w span { background: #CA5010; }
+
+  .what { display: flex; align-items: center; gap: 9px; }
+  .what .t { font-size: 14px; font-weight: 700; }
+  .ico { width: 18px; height: 18px; flex: 0 0 18px; }
+
+  .badge {
+    font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase;
+    padding: 5px 8px; border-radius: 4px; text-align: center; align-self: center;
+    display: inline-block;
+  }
+  .badge.read  { color: #0B6A0B; background: #EDF6ED; }
+  .badge.write { color: #8A3B0B; background: #FDF3EC; }
+  .ans { font-size: 12px; color: #605E5C; line-height: 1.5; align-self: center; }
+
+  .gate { margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+  .card {
+    border: 1px solid #EDEBE9; border-radius: 8px; background: #fff;
+    padding: 14px 18px; box-shadow: 0 1px 2px rgba(0,0,0,.045);
+  }
+  .card.orange { border-left: 5px solid #CA5010; }
+  .card.blue   { border-left: 5px solid #0078D4; }
+  .card-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .card-body  { font-size: 12px; color: #605E5C; line-height: 1.6; }
+  pre {
+    margin-top: 10px; font-family: Consolas, 'Cascadia Mono', monospace;
+    font-size: 11px; line-height: 1.5; color: #3B3A39;
+    background: #F8F8F7; border: 1px solid #EDEBE9; border-radius: 6px; padding: 11px 13px;
+    white-space: pre;
+  }
+  code {
+    font-family: Consolas, 'Cascadia Mono', monospace; font-size: .93em;
+    background: #F3F2F1; padding: 1px 5px; border-radius: 3px; color: #3B3A39;
+  }
+  .caption { margin-top: 26px; font-size: 12px; color: #605E5C; line-height: 1.6; max-width: 1050px; }
+</style>
+
+<h1>How the collector runs</h1>
+
+<p class="lede">
+  Ten steps, each one approved on its own. Five write nothing at all, and the
+  five that do are reversed by step 8. The agent prints what a step will do
+  <b>before</b> it does it, and will not start until the exact phrase comes back.
+  An approval never carries to the next step.
+</p>
+
+<div class="head">
+  <span class="head-title">The steps</span>
+  <span class="pill green">5 read only</span>
+  <span class="pill red">5 write</span>
+</div>
+
+<div class="steps">
+  <div class="num"><span>0</span></div>
+  <div class="what"><img class="ico" src="{{icon:subs}}" alt=""><span class="t">Preflight</span></div>
+  <div><span class="badge read">reads only</span></div>
+  <div class="ans">Is this account eligible, do you hold the roles, and what is the quota <b>before</b> anything moves</div>
+
+  <div class="num"><span>1</span></div>
+  <div class="what"><img class="ico" src="{{icon:mgroups}}" alt=""><span class="t">Discover</span></div>
+  <div><span class="badge read">reads only</span></div>
+  <div class="ans">Which management groups and quota groups exist now. Writes the run configuration every later step reads</div>
+
+  <div class="num"><span>2</span></div>
+  <div class="what"><img class="ico" src="{{icon:quotas}}" alt=""><span class="t">Read a group</span></div>
+  <div><span class="badge read">reads only</span></div>
+  <div class="ans">What the group APIs return, field by field. Against a group that already holds quota this answers most of the file</div>
+
+  <div class="num w"><span>3</span></div>
+  <div class="what"><img class="ico" src="{{icon:quotas}}" alt=""><span class="t">Create a group</span></div>
+  <div><span class="badge write">writes</span></div>
+  <div class="ans">Can a group be created by API, what is <code>groupType</code>, and what does enforcement take</div>
+
+  <div class="num w"><span>4</span></div>
+  <div class="what"><img class="ico" src="{{icon:subs}}" alt=""><span class="t">Fill the group</span></div>
+  <div><span class="badge write">writes</span></div>
+  <div class="ans">Does moving idle quota out of a subscription work with no support ticket. <b>Lowers the donor's limit</b></div>
+
+  <div class="num w"><span>5</span></div>
+  <div class="what"><img class="ico" src="{{icon:workflow}}" alt=""><span class="t">Allocate</span></div>
+  <div><span class="badge write">writes</span></div>
+  <div class="ans">The operation vending depends on. Is <code>limit</code> absolute or a delta, how long does it take, and when does Microsoft.Compute agree</div>
+
+  <div class="num w"><span>6</span></div>
+  <div class="what"><img class="ico" src="{{icon:quotas}}" alt=""><span class="t">Failure modes</span></div>
+  <div><span class="badge write">writes</span></div>
+  <div class="ans">What the refusals look like, verbatim. Every case is expected to fail; one that succeeds is the finding</div>
+
+  <div class="num"><span>7</span></div>
+  <div class="what"><img class="ico" src="{{icon:workflow}}" alt=""><span class="t">IaC reachability</span></div>
+  <div><span class="badge read">plan only</span></div>
+  <div class="ans">What Terraform's azapi provider will accept. Never applies</div>
+
+  <div class="num w"><span>8</span></div>
+  <div class="what"><img class="ico" src="{{icon:subs}}" alt=""><span class="t">Teardown</span></div>
+  <div><span class="badge write">writes</span></div>
+  <div class="ans">Puts every changed family back to the step 0 baseline and removes the group. Safe to run at any point</div>
+
+  <div class="num"><span>9</span></div>
+  <div class="what"><img class="ico" src="{{icon:location}}" alt=""><span class="t">Package</span></div>
+  <div><span class="badge read">local only</span></div>
+  <div class="ans">Redacts every identifier, hashes each file, and produces one zip to send back</div>
+</div>
+
+<div class="gate">
+  <div class="card orange">
+    <div class="card-title">Every write is approved on its own</div>
+    <div class="card-body">
+      The agent prints the resolved subscription and management group names, not
+      placeholders, so the approval is for the real thing. <code>yes</code>,
+      <code>ok</code> and <code>approve</code> are not the phrase.
+    </div>
+    <pre>  STEP 5 - ALLOCATE QUOTA TO THE TARGET
+
+  Writes to Azure   YES
+  What changes      Target's StandardDsv6Family limit in westus2
+  Reversible        Yes, by step 8
+  Roles used        GroupQuota Request Operator on the MG
+                    Quota Request Operator on the target
+  API calls         PATCH .../quotaAllocations/westus2   (1 write)
+                    GET   the operation, polled
+  Blast radius      One subscription, one family, one region
+  Cost              None
+
+  To run this step, reply exactly:  APPROVE STEP 5</pre>
+  </div>
+
+  <div class="card blue">
+    <div class="card-title">What makes it reversible</div>
+    <div class="card-body">
+      Step 0 records every family limit on both subscriptions before anything is
+      touched. Step 8 works from that baseline, so it does not care which steps
+      ran or whether one failed halfway. <code>Compare-Baseline.ps1</code>
+      answers &ldquo;is it back&rdquo; at any point, including days later.
+      <br><br>
+      The agent may only run the scripts in <code>scripts/</code>. It cannot
+      write a new one, cannot edit one to make a call succeed, and cannot run
+      <code>az</code> directly. A step that needs something no script does is
+      reported as a finding and stops.
+      <br><br>
+      <b>Quota is not capacity.</b> Lowering a subscription's limit does not stop
+      a running virtual machine. It stops that subscription creating new ones
+      above the lowered limit.
+    </div>
+  </div>
+</div>
+
+<div class="caption">
+  Steps 0 to 2 write nothing, so the whole shape of the thing can be seen before
+  any write is approved. Stopping after any step still produces a useful
+  package: step 9 records which steps ran, and a question nobody reached is
+  recorded as a gap rather than left blank.
+</div>
