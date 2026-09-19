@@ -44,20 +44,34 @@ run:
 enforcement:
   - id: A1
     question: >
-      What does PUT or PATCH on
-      groupQuotas/{group}/resourceProviders/Microsoft.Compute/locationSettings/{location}
-      accept? Give the exact body that sets enforcement on.
+      Does the enforcement write actually LAND on an eligible account?
     unblocks: Everything below it. An unenforced group cannot be read in aggregate.
     answer: null
     capture: null
+    notes: >
+      The body is known and is not the question. PUT locationSettings/{location}
+      with {"properties": {"enforcementEnabled": "Enabled"}} returned HTTP 201
+      on an MCA-Individual tenant, with an Azure-AsyncOperation header and a
+      response naming enforcedGroupName "{group}-{location}". Twenty minutes
+      later nothing had changed: locationSettings still 404, locationUsages
+      still 405.
+
+      So the submit is accepted before eligibility is evaluated, the same way a
+      per-subscription quota PUT returns 202 and later fails. What is needed is
+      the POLLED result on an account that can actually use the feature. Record
+      the state sequence and the elapsed time.
 
   - id: A2
     question: >
-      What are the valid values of enforcement status, and what does the
-      resource look like once it is set?
+      What does locationSettings return once enforcement has landed, and what
+      are the valid values?
     unblocks: Whether AQV has to check enforcement before trusting a group read.
     answer: null
     capture: null
+    notes: >
+      Also record what happens to `groupType`. It reads AllocationGroup on an
+      unenforced group, and the enforcement response invented a second name for
+      the same thing, so there may be a second value.
 
   - id: A3
     question: >
@@ -80,7 +94,7 @@ enforcement:
     question: >
       What is `groupType`? An unenforced group read as `AllocationGroup`. Is
       there another value, and is it chosen at creation or by enforcing?
-    unblocks: Which kind of group AQV should tell a platform team to create.
+    unblocks: Which kind of group AQV should expect a platform team to have.
     answer: null
     capture: null
 

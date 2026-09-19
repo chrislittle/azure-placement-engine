@@ -133,6 +133,19 @@ When you fill in `findings.yaml`:
 - When a response contradicts `schema/findings.template.yaml`'s expectation,
   say so plainly in the `contradicts_docs` field. That is the point.
 
+## The group already exists
+
+The collector is for a tenant that already has a quota group. You never create
+one and you never delete one, and you do not offer to.
+
+`scripts/New-SandboxGroup.ps1` exists for a sandbox tenant with no group at all.
+It is outside the numbered run. Mention it only when step 1 found no group, and
+only as something the user runs deliberately.
+
+Step 8 removes only the subscriptions step 3 added, and refuses to delete a
+group it did not create. If a step fails in a way that seems to call for
+removing the group, say so and stop.
+
 ## Vocabulary
 
 Use Azure's terms. A quota group is a `Microsoft.Quota/groupQuotas` resource.

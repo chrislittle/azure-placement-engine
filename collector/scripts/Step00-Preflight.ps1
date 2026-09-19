@@ -82,10 +82,17 @@ if ($types -contains 'MicrosoftCustomerAgreement') {
 # --- A2: the GroupQuota Request Operator role ---------------------------
 Write-Host ''
 Write-Host '  Roles' -ForegroundColor Cyan
+# Role definitions are tenant-wide, so either subscription answers. Asking the
+# target first and falling back matters because a subscription you cannot read
+# returns 404, which would otherwise be reported as "the role does not exist".
 $roleFilter = "`$filter=roleName eq 'GroupQuota Request Operator'"
-$roles = Invoke-AqvApi -Method GET `
-    -Path "/subscriptions/$TargetSubscriptionId/providers/Microsoft.Authorization/roleDefinitions?$roleFilter" `
-    -ApiVersion '2022-04-01' -Purpose 'A2: does GroupQuota Request Operator exist'
+$roles = $null
+foreach ($sub in @($TargetSubscriptionId, $DonorSubscriptionId)) {
+    $roles = Invoke-AqvApi -Method GET `
+        -Path "/subscriptions/$sub/providers/Microsoft.Authorization/roleDefinitions?$roleFilter" `
+        -ApiVersion '2022-04-01' -Purpose 'A2: does GroupQuota Request Operator exist'
+    if ($roles.Ok) { break }
+}
 
 $roleFound = $false
 if ($roles.Ok -and @(Get-AqvProp $roles.Body 'value').Count -gt 0) {
@@ -106,17 +113,22 @@ if ($roles.Ok -and @(Get-AqvProp $roles.Body 'value').Count -gt 0) {
 }
 else {
     $summary.groupquota_role = $null
-    Write-Host '    GroupQuota Request Operator: NOT FOUND at subscription scope.' -ForegroundColor Yellow
-    Write-Host '    It may be defined only at management group scope. Step 3 will confirm.'
+    Write-Host ("    GroupQuota Request Operator: NOT FOUND (HTTP {0})." -f $roles.Status) -ForegroundColor Yellow
+    Write-Host '    A 404 here usually means the subscription could not be read, not that'
+    Write-Host '    the role is missing. Check the subscription IDs before reading anything into it.'
 }
 $summary.groupquota_role_found = $roleFound
 
 # Quota Request Operator is the per-subscription half and is already used by
 # AQV's existing path, so its absence is a real blocker rather than a curiosity.
 $qroFilter = "`$filter=roleName eq 'Quota Request Operator'"
-$qro = Invoke-AqvApi -Method GET `
-    -Path "/subscriptions/$TargetSubscriptionId/providers/Microsoft.Authorization/roleDefinitions?$qroFilter" `
-    -ApiVersion '2022-04-01' -Purpose 'A2: Quota Request Operator definition'
+$qro = $null
+foreach ($sub in @($TargetSubscriptionId, $DonorSubscriptionId)) {
+    $qro = Invoke-AqvApi -Method GET `
+        -Path "/subscriptions/$sub/providers/Microsoft.Authorization/roleDefinitions?$qroFilter" `
+        -ApiVersion '2022-04-01' -Purpose 'A2: Quota Request Operator definition'
+    if ($qro.Ok) { break }
+}
 $summary.quota_request_operator_found = ($qro.Ok -and @(Get-AqvProp $qro.Body 'value').Count -gt 0)
 
 # --- A3: resource provider registration ---------------------------------
@@ -136,6 +148,13 @@ foreach ($sub in @($DonorSubscriptionId, $TargetSubscriptionId)) {
     $regs[$label] = $perSub
 }
 $summary.provider_registration = $regs
+
+$unreadable = @($regs.Keys | Where-Object { "$($regs[$_].'Microsoft.Compute')" -like 'HTTP 4*' })
+if ($unreadable.Count -gt 0) {
+    Write-Host ''
+    Write-Host ("    Could not read: {0}. Check the subscription ID and your access." -f ($unreadable -join ', ')) -ForegroundColor Yellow
+    $summary.unreadable_subscriptions = $unreadable
+}
 
 # --- Baseline -----------------------------------------------------------
 # The point of the whole step. Everything a later step changes is measured

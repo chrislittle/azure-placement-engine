@@ -9,8 +9,7 @@
     later step can be pointed at the wrong thing by a typo.
 
     .PARAMETER ManagementGroupId
-    Where the quota group will be created in step 3. Must be one you can write
-    to.
+    The management group your quota group sits under.
 
     .PARAMETER Family
     The VM family to move quota for, exactly as Microsoft.Compute reports it,
@@ -29,8 +28,9 @@ param(
     [Parameter(Mandatory)][string]$ManagementGroupId,
     [Parameter(Mandatory)][string]$Family,
     [int]$Cores = 8,
-    # Only used by step 3. Named here so the whole run is described in one file.
-    [string]$GroupName = 'aqvcollector'
+    # The EXISTING quota group to use. The collector joins one; it does not
+    # create one. Run without it to list what is there and be told the names.
+    [string]$GroupName
 )
 
 Set-StrictMode -Version Latest
@@ -38,13 +38,6 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'AqvCollect.psm1') -Force
 
 Write-AqvStep -Number 1 -Title 'Discover management groups and quota groups'
-
-# Quota group names are lower-case alphanumeric only. azapi's embedded schema
-# rejects anything else with `name is invalid, string does not match pattern
-# ^[a-z][a-z0-9]*$`, and a hyphen is the obvious thing to reach for.
-if ($GroupName -cnotmatch '^[a-z][a-z0-9]*$') {
-    throw ("Group name '{0}' is invalid. Lower-case letters and digits only, starting with a letter. No hyphens." -f $GroupName)
-}
 
 if ($DonorSubscriptionId -eq $TargetSubscriptionId) {
     throw 'The donor and the target must be different subscriptions. Moving quota from a subscription to itself proves nothing.'
@@ -107,11 +100,33 @@ $summary.existing_quota_groups = $existing
 if ($existing.Count -gt 0) {
     Write-Host ("    {0} found:" -f $existing.Count) -ForegroundColor Green
     $existing | ForEach-Object { Write-Host ("      {0} under {1}" -f $_.name, $_.management_group) }
-    Write-Host '    Step 2 can read a real group. That is better evidence than a new empty one.'
 }
 else {
-    Write-Host '    None found. Step 2 will have nothing to read until step 3 creates one.'
+    Write-Host '    None found in any management group you can read.' -ForegroundColor Yellow
+    Write-Host '    This collector joins an EXISTING group. If the tenant genuinely has'
+    Write-Host '    none, ./New-SandboxGroup.ps1 stands one up, deliberately outside the run.'
 }
+
+# Naming a group that is not there would only fail later, in a step that writes.
+if (-not $GroupName) {
+    Write-Host ''
+    Write-Host '    No -GroupName given. Re-run naming one of the groups above.' -ForegroundColor Yellow
+    Write-Host '    Nothing has been written and no run configuration was saved.'
+    $null = Save-AqvCapture -Name '01-discover' -Summary $summary
+    return
+}
+
+$chosen = @($existing | Where-Object { $_.name -eq $GroupName -and $_.management_group -eq $ManagementGroupId })
+if ($chosen.Count -eq 0) {
+    Write-Host ''
+    Write-Host ("    '{0}' was not found under {1}." -f $GroupName, $ManagementGroupId) -ForegroundColor Red
+    Write-Host '    Names are case sensitive. Pick one from the list above.'
+    $summary.group_found = $false
+    $null = Save-AqvCapture -Name '01-discover' -Summary $summary
+    return
+}
+$summary.group_found = $true
+Write-Host ("    Using {0}." -f $GroupName) -ForegroundColor Green
 
 # --- Is either subscription already in a group? -------------------------
 # A subscription can be in only one group, so this decides whether the run can
