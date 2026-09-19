@@ -1,0 +1,194 @@
+<meta charset="utf-8">
+<!--
+  Source for docs/images/personas.png, used in docs/GUIDE.md under
+  "Who does what". Render with docs/images/src/render.ps1.
+-->
+<style>{{style}}</style>
+
+<h1>Who does what</h1>
+
+<p class="lede">
+  The application team fills in a form. They do not write YAML and they do not
+  have access to the platform repository. Everything between the form and the
+  handover belongs to the platform team. The workload team picks it up
+  afterwards and deploys.
+</p>
+
+<div class="head">
+  <span class="head-title">The flow, by who owns each part</span>
+</div>
+
+<div class="lane">
+  <div class="lane-name">
+    <span class="who">Application team</span>
+    <span class="sub">No Azure rights needed. No repository access.</span>
+  </div>
+  <div class="lane-body" style="grid-template-columns: 1fr 1fr 1fr">
+    <div class="card blue">
+      <div class="title-row">
+        <img class="ico" src="{{icon:guide}}" alt="">
+        <span class="card-title">1. Intake form</span>
+      </div>
+      <div class="card-body">
+        Region, how many vCPUs, what kind of workload, does it need to survive a
+        datacentre failure, prod or devtest. <b>Nobody is asked to name a VM
+        family.</b>
+      </div>
+    </div>
+    <div class="card" style="border-style:dashed;border-color:#EDEBE9;box-shadow:none;background:#FCFCFC">
+      <div class="card-body" style="text-align:center">
+        <i>they wait &mdash; everything between is the platform team</i>
+      </div>
+    </div>
+    <div class="card blue">
+      <div class="title-row">
+        <img class="ico" src="{{icon:vm}}" alt="">
+        <span class="card-title">9. They deploy</span>
+      </div>
+      <div class="card-body">
+        Put the named size in their own IaC, in their own pipeline. AQV does not
+        run it and cannot see it.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="lane">
+  <div class="lane-name">
+    <span class="who">Platform team</span>
+    <span class="sub">Owns the form, both YAML files and every pipeline.</span>
+  </div>
+  <div class="lane-body" style="grid-template-columns: repeat(3, 1fr)">
+    <div class="card purple">
+      <div class="title-row">
+        <img class="ico" src="{{icon:workflow}}" alt="">
+        <span class="card-title">2. Request pipeline</span>
+      </div>
+      <div class="card-body">
+        Turns the form into <code>requests/&lt;app&gt;.yaml</code> in the
+        platform repository. <b>The application team never writes this.</b>
+      </div>
+    </div>
+    <div class="card purple">
+      <div class="title-row">
+        <img class="ico" src="{{icon:code}}" alt="">
+        <span class="card-title">3. Pull request</span>
+      </div>
+      <div class="card-body">
+        A person reviews the generated request. The plan later shows the chosen
+        family and the quota to be written, before anything is written.
+      </div>
+    </div>
+    <div class="card purple">
+      <div class="title-row">
+        <img class="ico" src="{{icon:policy}}" alt="">
+        <span class="card-title">rules.yaml</span>
+      </div>
+      <div class="card-body">
+        One file for the whole platform, hand-written. Allowlists, denylists, a
+        vCPU cap, and which family to prefer. <b>Enforced in the pipeline</b>,
+        which is the only place it can be enforced.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="lane">
+  <div class="lane-name">
+    <span class="who">The pipeline</span>
+    <span class="sub">Both stages, one after the other.</span>
+  </div>
+  <div class="lane-body" style="grid-template-columns: 1fr 100px 1fr 100px 1fr">
+    <div class="card grey">
+      <div class="title-row">
+        <img class="ico" src="{{icon:subs}}" alt="">
+        <span class="card-title">4. Stage 1</span>
+      </div>
+      <div class="card-body">Sub-vending creates the subscription.</div>
+    </div>
+    <div class="conn"><span class="glyph">&#9654;</span><code>subscription_id</code></div>
+    <div class="card blue">
+      <div class="title-row">
+        <img class="ico" src="{{icon:quotas}}" alt="">
+        <span class="card-title">5. Stage 2, AQV</span>
+      </div>
+      <div class="card-body">read &rarr; decide &rarr; apply. Reads the request and the rules.</div>
+    </div>
+    <div class="conn"><span class="glyph">&#9654;</span>artifact</div>
+    <div class="card green">
+      <div class="title-row">
+        <img class="ico" src="{{icon:guide}}" alt="">
+        <span class="card-title">6. decision.json</span>
+      </div>
+      <div class="card-body">Goes into the notification the vending guidance already has a step for.</div>
+    </div>
+  </div>
+</div>
+
+<div class="lane">
+  <div class="lane-name">
+    <span class="who">Workload team</span>
+    <span class="sub">After the handover. <code>Reader</code> on their own subscription is enough.</span>
+  </div>
+  <div class="lane-body" style="grid-template-columns: 1fr 1fr">
+    <div class="card green">
+      <div class="title-row">
+        <img class="ico" src="{{icon:guide}}" alt="">
+        <span class="card-title">7. They are told what they got</span>
+      </div>
+      <div class="card-body">
+        The family, the sizes inside it that fit, and how many of each the
+        request needs.
+      </div>
+    </div>
+    <div class="card green">
+      <div class="title-row">
+        <img class="ico" src="{{icon:location}}" alt="">
+        <span class="card-title">8. They can ask again, any time</span>
+      </div>
+      <div class="card-body">
+        <code>examples/what-can-i-deploy</code>, Terraform or PowerShell, reads
+        only. A value written down at vending time is a snapshot; this asks the
+        subscription as it is now.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="head"><span class="head-title">The boundary</span></div>
+
+<table>
+  <tr><th style="width:150px"></th><th>Application team</th><th>Platform team</th></tr>
+  <tr>
+    <td class="k">Touches</td>
+    <td class="d">The intake form only.</td>
+    <td class="d">The form, the pipelines, both YAML files.</td>
+  </tr>
+  <tr>
+    <td class="k">Writes YAML</td>
+    <td class="d">No. The request pipeline generates it.</td>
+    <td class="d">Yes, <code>rules.yaml</code>, by hand.</td>
+  </tr>
+  <tr>
+    <td class="k">Repository access</td>
+    <td class="d">None required.</td>
+    <td class="d">Owns it.</td>
+  </tr>
+  <tr>
+    <td class="k">Azure rights</td>
+    <td class="d">None required. Optionally <code>Reader</code> on their own subscription.</td>
+    <td class="d"><code>Reader</code> and <code>Quota Request Operator</code>.</td>
+  </tr>
+  <tr>
+    <td class="k">Receives</td>
+    <td class="d">A subscription with quota, the family, and the sizes inside it that fit.</td>
+    <td class="d">The decision, and why each family lost.</td>
+  </tr>
+</table>
+
+<div class="caption">
+  A rule cannot be enforced by a script the workload team runs, because they
+  would simply not pass the file. Rules are enforced in the pipeline, where the
+  platform team controls which rules file is used. By the time the workload team
+  reads their quota, the rules have already decided what they were granted.
+</div>

@@ -1,0 +1,169 @@
+<meta charset="utf-8">
+<!--
+  Source for docs/images/decision-gates.png, used in docs/GUIDE.md under
+  "Reading a decision". Render with docs/images/src/render.ps1.
+-->
+<style>{{style}}</style>
+
+<h1>Reading a decision</h1>
+
+<p class="lede">
+  Four gates, in this order. <b>A gate means nothing until the gates above it
+  pass.</b> Quota and access are separate things, and quota for a family the
+  subscription cannot deploy is useless &mdash; so access is checked first. A
+  business rule can reject the request before any gate runs.
+</p>
+
+<div class="head">
+  <span class="head-title">The gates</span>
+  <span class="pill grey">first failure wins</span>
+</div>
+
+<div class="row four">
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:location}}" alt="">
+      <span class="card-title">1. Region</span>
+    </div>
+    <div class="card-body">
+      Can the subscription reach the region at all?<br><br>
+      <span class="tag">not_ready</span>
+      <span class="tag">blocked_by_region</span>
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span></div>
+
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:preview}}" alt="">
+      <span class="card-title">2. Lifecycle</span>
+    </div>
+    <div class="card-body">
+      Is any candidate family still open to a new subscription?<br><br>
+      <span class="tag">blocked_by_lifecycle</span>
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span></div>
+
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:roles}}" alt="">
+      <span class="card-title">3. Access</span>
+    </div>
+    <div class="card-body">
+      Can the subscription deploy any candidate here, in the zones asked for?<br><br>
+      <span class="tag">blocked_by_access</span>
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span></div>
+
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:quotas}}" alt="">
+      <span class="card-title">4. Quota</span>
+    </div>
+    <div class="card-body">
+      Can a candidate reach the size, from quota it holds or a pool behind it?<br><br>
+      <span class="tag">needs_increase</span>
+      <span class="tag">infeasible</span>
+    </div>
+  </div>
+</div>
+
+<div class="head">
+  <span class="head-title">What each status means, and what to do</span>
+</div>
+
+<table>
+  <tr><th style="width:190px">status</th><th style="width:44%">Meaning</th><th>What to do</th></tr>
+  <tr>
+    <td class="k" style="color:#0B6A0B">satisfied</td>
+    <td class="d">Existing quota covers it.</td>
+    <td class="d">Nothing. <code>writes_required</code> is empty.</td>
+  </tr>
+  <tr>
+    <td class="k" style="color:#8A3B0B">needs_allocation</td>
+    <td class="d">A quota group covers the shortfall.</td>
+    <td class="d">Apply. Allocation is self-service and succeeds. <b>Needs a quota group, which is not built yet.</b></td>
+  </tr>
+  <tr>
+    <td class="k" style="color:#8A3B0B">needs_increase</td>
+    <td class="d">The regional cap has to be raised.</td>
+    <td class="d">Apply, but <b>this is not a promise</b>. Increases are evaluated, not granted.</td>
+  </tr>
+  <tr>
+    <td class="k" style="color:#605E5C">not_ready</td>
+    <td class="d"><code>Microsoft.Compute</code> is not registered yet.</td>
+    <td class="d"><b>Wait and retry.</b> Transient, and normal right after vending.</td>
+  </tr>
+  <tr>
+    <td class="k" style="color:#A4262C">blocked_by_region</td>
+    <td class="d">The subscription cannot reach the region at all.</td>
+    <td class="d">Region access request. No quota action helps.</td>
+  </tr>
+  <tr>
+    <td class="k" style="color:#A4262C">blocked_by_lifecycle</td>
+    <td class="d">Every candidate is under the July 2026 capacity growth restrictions.</td>
+    <td class="d">Use a successor family. The reason names them.</td>
+  </tr>
+  <tr>
+    <td class="k" style="color:#A4262C">blocked_by_access</td>
+    <td class="d">No candidate can deploy here.</td>
+    <td class="d">Read <code>access.remediation</code>. It names the right ticket, or says there isn't one.</td>
+  </tr>
+  <tr>
+    <td class="k" style="color:#A4262C">blocked_by_rule</td>
+    <td class="d">A business rule refused it, before any gate ran.</td>
+    <td class="d">Change the request or the rule.</td>
+  </tr>
+  <tr>
+    <td class="k" style="color:#A4262C">infeasible</td>
+    <td class="d">No candidate family can reach the requested size.</td>
+    <td class="d">Different region, family, or size.</td>
+  </tr>
+</table>
+
+<div class="head">
+  <span class="head-title">The fields worth reading after <code>status</code></span>
+</div>
+
+<div class="four-col">
+  <div class="card green">
+    <div class="card-title">considered</div>
+    <div class="card-body">
+      Every candidate with its numbers and why it lost. <i>"Why not that
+      family"</i> is most of what anyone actually asks.
+    </div>
+  </div>
+  <div class="card green">
+    <div class="card-title">sizes</div>
+    <div class="card-body">
+      What to actually deploy, largest first. A family cannot be deployed; a
+      size can. A size the quota cannot run is never listed.
+    </div>
+  </div>
+  <div class="card green">
+    <div class="card-title">access.remediation</div>
+    <div class="card-body">
+      Names the specific ticket: region or SKU access, zonal enablement, or none
+      at all when the offer excludes the SKU.
+    </div>
+  </div>
+  <div class="card green">
+    <div class="card-title">regional</div>
+    <div class="card-body">
+      The region-wide vCPU cap, shared by every family. It binds separately from
+      the family limit and is raised separately.
+    </div>
+  </div>
+</div>
+
+<div class="caption">
+  A refused quota write <b>fails the apply on purpose</b>. Terraform cannot catch
+  a resource error, and it is the right outcome anyway: a vended subscription
+  that cannot run its workload is a failure, not a caveat. Three refusal codes,
+  none retryable &mdash; <code>ContactSupport</code>,
+  <code>QuotaNotAvailableForResource</code>, <code>DeprecatedQuotaType</code>.
+  <code>PreconditionFailed</code> is not one of them: it comes from polling, and
+  has been seen on a write Azure completed.
+</div>

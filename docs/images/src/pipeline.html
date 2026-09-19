@@ -1,0 +1,182 @@
+<meta charset="utf-8">
+<!--
+  Source for docs/images/pipeline.png, used in docs/GUIDE.md under
+  "GitHub Actions". Render with docs/images/src/render.ps1.
+-->
+<style>{{style}}</style>
+
+<h1>Running it in GitHub Actions</h1>
+
+<p class="lede">
+  Three workflows ship in <code>.github/workflows</code>. One needs no Azure at
+  all and runs on every push. The other two are stage 2, one per path, and
+  neither writes anything unless it is asked to.
+</p>
+
+<div class="head">
+  <span class="head-title">The workflows</span>
+</div>
+
+<table>
+  <tr><th style="width:240px">Workflow</th><th style="width:170px">Trigger</th><th>What it does</th></tr>
+  <tr>
+    <td class="k"><code>conformance.yml</code></td>
+    <td class="d">push, pull request</td>
+    <td class="d">Runs both implementations against the shared scenarios, plus <code>terraform test</code>. <b>No Azure needed.</b></td>
+  </tr>
+  <tr>
+    <td class="k"><code>vend-stage-2-terraform.yml</code></td>
+    <td class="d"><code>workflow_dispatch</code>, or called</td>
+    <td class="d">Stage 2, Terraform path. Plans by default; writes only when asked.</td>
+  </tr>
+  <tr>
+    <td class="k"><code>vend-stage-2-bicep.yml</code></td>
+    <td class="d"><code>workflow_dispatch</code>, or called</td>
+    <td class="d">Stage 2, Bicep path. PowerShell reads and decides, Bicep writes.</td>
+  </tr>
+</table>
+
+<div class="head">
+  <span class="head-title">Wiring stage 2 to stage 1</span>
+  <span class="pill grey">one value crosses</span>
+</div>
+
+<div class="two-col">
+  <div>
+    <div class="card grey">
+      <div class="title-row">
+        <img class="ico" src="{{icon:templates}}" alt="">
+        <span class="card-title">stage-1-vending</span>
+      </div>
+      <div class="card-body">
+        Creates the subscription and puts its ID in <code>$GITHUB_OUTPUT</code>.
+      </div>
+    </div>
+    <div class="split">needs: stage-1-vending</div>
+    <div class="card blue">
+      <div class="title-row">
+        <img class="ico" src="{{icon:quotas}}" alt="">
+        <span class="card-title">stage-2-quota</span>
+      </div>
+      <div class="card-body">
+        Takes <code>subscription_id</code>, the request file and
+        <code>apply_writes</code>. Everything else it needs is in the
+        repository.
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">In one pipeline</div>
+    <pre>stage-2-quota:
+  needs: stage-1-vending
+  uses: ./.github/workflows/vend-stage-2-terraform.yml
+  with:
+    subscription_id: ${{ needs.stage-1-vending.outputs.subscription_id }}
+    request_file: requests/payments-api.yaml
+    apply_writes: true</pre>
+    <div class="card-body" style="margin-top:10px">
+      <code>subscription_id</code> is the entire handoff contract, and
+      <code>avm-ptn-sub-vending</code> already outputs it. The vending module
+      needs no changes.
+    </div>
+  </div>
+</div>
+
+<div class="head">
+  <span class="head-title">Identity and rights</span>
+  <span class="pill green">no stored secrets</span>
+</div>
+
+<div class="row two">
+  <div class="card purple">
+    <div class="title-row">
+      <img class="ico" src="{{icon:identity}}" alt="">
+      <span class="card-title">OIDC federated credential</span>
+    </div>
+    <div class="card-body">
+      <code>permissions: id-token: write</code>, with
+      <code>AZURE_CLIENT_ID</code> and <code>AZURE_TENANT_ID</code> as
+      repository variables. Nothing is stored. The subject must match what the
+      workflow presents, or the login fails without saying why.
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span>assumes</div>
+  <div class="card purple">
+    <div class="title-row">
+      <img class="ico" src="{{icon:roles}}" alt="">
+      <span class="card-title">Two roles, on the vended subscription</span>
+    </div>
+    <div class="card-body">
+      <b>Reader</b> for <code>Microsoft.Compute/skus</code>,
+      <code>locations/usages</code> and provider registration.<br>
+      <b>Quota Request Operator</b> for
+      <code>Microsoft.Quota/quotas/write</code>, and
+      <code>Microsoft.Support/*</code> with it.
+      <br><br>
+      Contributor also works and grants far more than AQV needs.
+    </div>
+  </div>
+</div>
+
+<div class="head">
+  <span class="head-title">Reviewing before writing</span>
+  <span class="pill blue">the reason for two stages</span>
+</div>
+
+<div class="three">
+  <div class="card green">
+    <div class="card-title">The plan is meaningful</div>
+    <div class="card-body">
+      Stage 2 runs against a subscription that already exists, so the plan shows
+      the chosen family, the quota to write and why every other family was
+      rejected. One module would have to defer every read until apply, and the
+      decision would never appear in a plan at all.
+    </div>
+  </div>
+  <div class="card green">
+    <div class="card-title"><code>apply_writes</code> defaults to false</div>
+    <div class="card-body">
+      A run with it off evaluates the whole decision and writes nothing. That is
+      the normal way to look at an answer, and it needs only
+      <code>Reader</code>.
+    </div>
+  </div>
+  <div class="card orange">
+    <div class="card-title">A refusal fails the run</div>
+    <div class="card-body">
+      On purpose. Terraform cannot catch a resource error, and a vended
+      subscription that cannot run its workload is a failure rather than a
+      caveat. Read the quota back afterwards: a write can succeed in Azure and
+      still fail the apply.
+    </div>
+  </div>
+</div>
+
+<div class="head">
+  <span class="head-title">Runners</span>
+  <span class="pill grey">GitHub-hosted unless you say otherwise</span>
+</div>
+
+<table>
+  <tr><th style="width:220px">Variable</th><th style="width:200px">Unset</th><th>Set</th></tr>
+  <tr>
+    <td class="k"><code>CI_RUNNER_LINUX</code></td>
+    <td class="d"><code>ubuntu-latest</code></td>
+    <td class="d">That label. Terraform and Bicep jobs. Needs <code>az</code>.</td>
+  </tr>
+  <tr>
+    <td class="k"><code>CI_RUNNER_WINDOWS</code></td>
+    <td class="d"><code>ubuntu-latest</code></td>
+    <td class="d">That label. PowerShell jobs. Needs <code>pwsh</code>.</td>
+  </tr>
+</table>
+
+<div class="caption">
+  Do not set a runner variable before the runner is registered and online, or
+  jobs queue waiting for a runner that does not exist. Self-hosted runners
+  cannot be shared between repositories on a personal account &mdash; runner
+  <i>groups</i>, the mechanism for sharing, exist only for organizations. A
+  public repository gets unlimited GitHub-hosted minutes for standard runners,
+  and then none of this is needed.
+</div>
