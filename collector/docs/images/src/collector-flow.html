@@ -1,34 +1,15 @@
 <meta charset="utf-8">
 <!--
-  Source for docs/images/collector-flow.png. Render with render.ps1, then trim
-  the trailing whitespace to the content height.
-
-  Same palette and conventions as quota-group-architecture.html.
+  Source for collector/docs/images/collector-flow.png.
+  Render with docs/images/src/render.ps1 from the repository root.
+  Shared styling is in docs/images/src/_style.css.
 -->
+<style>{{style}}</style>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    width: 1180px; padding: 32px; background: #fff;
-    font-family: 'Segoe UI', system-ui, sans-serif; color: #201F1E;
-    -webkit-font-smoothing: auto;
-  }
-  h1 {
-    font-size: 21px; font-weight: 700; color: #243A5E;
-    letter-spacing: -.2px; line-height: 1.2;
-    padding-bottom: 9px; border-bottom: 2px solid #EDEBE9;
-  }
-  .lede { margin-top: 12px; font-size: 13px; color: #605E5C; line-height: 1.55; max-width: 960px; }
-
-  .head { display: flex; align-items: center; gap: 12px; height: 20px; margin: 26px 0 12px; }
-  .head-title { font-size: 15px; font-weight: 700; color: #243A5E; }
-  .pill { font-size: 10.5px; font-weight: 700; line-height: 1; padding: 5px 10px; border-radius: 999px; }
-  .pill.green { color: #0B6A0B; background: #EDF6ED; }
-  .pill.red   { color: #A4262C; background: #FDF3F4; }
-
+  /* Local to this diagram. Everything else is in _style.css. */
   .steps { display: grid; grid-template-columns: 46px 1fr 132px 1fr; gap: 0 16px; }
   .steps > div { padding: 11px 0; border-bottom: 1px solid #F3F2F1; }
   .steps > div:nth-child(-n+4) { border-top: 1px solid #EDEBE9; }
-
   .num {
     font-size: 15px; font-weight: 700; color: #fff; text-align: center;
     display: flex; align-items: center; justify-content: center;
@@ -38,11 +19,8 @@
     display: flex; align-items: center; justify-content: center; font-size: 13px;
   }
   .num.w span { background: #CA5010; }
-
   .what { display: flex; align-items: center; gap: 9px; }
   .what .t { font-size: 14px; font-weight: 700; }
-  .ico { width: 18px; height: 18px; flex: 0 0 18px; }
-
   .badge {
     font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase;
     padding: 5px 8px; border-radius: 4px; text-align: center; align-self: center;
@@ -51,27 +29,7 @@
   .badge.read  { color: #0B6A0B; background: #EDF6ED; }
   .badge.write { color: #8A3B0B; background: #FDF3EC; }
   .ans { font-size: 12px; color: #605E5C; line-height: 1.5; align-self: center; }
-
   .gate { margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
-  .card {
-    border: 1px solid #EDEBE9; border-radius: 8px; background: #fff;
-    padding: 14px 18px; box-shadow: 0 1px 2px rgba(0,0,0,.045);
-  }
-  .card.orange { border-left: 5px solid #CA5010; }
-  .card.blue   { border-left: 5px solid #0078D4; }
-  .card-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
-  .card-body  { font-size: 12px; color: #605E5C; line-height: 1.6; }
-  pre {
-    margin-top: 10px; font-family: Consolas, 'Cascadia Mono', monospace;
-    font-size: 11px; line-height: 1.5; color: #3B3A39;
-    background: #F8F8F7; border: 1px solid #EDEBE9; border-radius: 6px; padding: 11px 13px;
-    white-space: pre;
-  }
-  code {
-    font-family: Consolas, 'Cascadia Mono', monospace; font-size: .93em;
-    background: #F3F2F1; padding: 1px 5px; border-radius: 3px; color: #3B3A39;
-  }
-  .caption { margin-top: 26px; font-size: 12px; color: #605E5C; line-height: 1.6; max-width: 1050px; }
 </style>
 
 <h1>How the collector runs</h1>

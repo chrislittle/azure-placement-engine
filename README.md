@@ -75,26 +75,9 @@ reporting. Quota is not one of them. The Cloud Adoption Framework states the
 problem but does not solve it: *"the quota request can fail, so you should run a
 script to handle any errors."*
 
-```mermaid
-flowchart LR
-    QG["<b>Quota group</b><br/>the platform's pool<br/><i>not built yet</i>"]
-    R["<b>Request file</b><br/>one per subscription"]
-    S1["<b>Stage 1</b><br/>sub-vending"]
-    RD["aqv-read"]
-    DC["aqv-decide"]
-    AP["aqv-apply"]
-    APP["<b>Application team</b><br/>deploys the workload"]
-
-    R --> S1 -->|subscription_id| RD --> DC --> AP -->|"family name, quota set"| APP
-    QG -.->|"allocate<br/>self-service"| AP
-
-    classDef pending stroke-dasharray: 5 5
-    class QG pending
-```
-
-The dashed box is where the quota is meant to come from and is **not built
-yet**. Today `aqv-apply` writes the regional cap and nothing else. See
-[Where the quota is meant to come from](#where-the-quota-is-meant-to-come-from).
+<p align="left">
+  <img src="docs/images/architecture.png" alt="The two stages, where the quota is meant to come from, the Terraform and Bicep paths, and what the application team receives" width="900" />
+</p>
 
 Two paths, one set of answers:
 

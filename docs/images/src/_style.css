@@ -1,0 +1,137 @@
+/*
+    Shared styling for every diagram in this repository.
+
+    render.ps1 inlines this file into each diagram, in place of the style
+    placeholder, so one change here reaches all of them. Do not write that
+    placeholder in this file: it would survive substitution and trip the
+    renderer's own check.
+
+    Fluent palette, Segoe UI, 1180px wide, rendered at 2x. Same conventions as
+    ghcp-credit-visibility-azure, so the two read as one house style.
+*/
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  width: 1180px; padding: 32px; background: #fff;
+  font-family: 'Segoe UI', system-ui, sans-serif; color: #201F1E;
+  -webkit-font-smoothing: auto;
+}
+
+h1 {
+  font-size: 21px; font-weight: 700; color: #243A5E;
+  letter-spacing: -.2px; line-height: 1.2;
+  padding-bottom: 9px; border-bottom: 2px solid #EDEBE9;
+}
+
+.lede { margin-top: 12px; font-size: 13px; color: #605E5C; line-height: 1.55; max-width: 960px; }
+
+/* --- section headings --------------------------------------------------- */
+.head { display: flex; align-items: center; gap: 12px; height: 20px; margin: 26px 0 13px; }
+.head-title { font-size: 15px; font-weight: 700; color: #243A5E; }
+
+.pill {
+  font-size: 10.5px; font-weight: 700; line-height: 1;
+  padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+}
+.pill.blue   { color: #1E40AF; background: #EDF2FB; }
+.pill.purple { color: #5C2D91; background: #F3EEFA; }
+.pill.green  { color: #0B6A0B; background: #EDF6ED; }
+.pill.orange { color: #8A3B0B; background: #FDF3EC; }
+.pill.red    { color: #A4262C; background: #FDF3F4; }
+.pill.grey   { color: #605E5C; background: #F3F2F1; }
+
+/* --- cards -------------------------------------------------------------- */
+.card {
+  border: 1px solid #EDEBE9; border-radius: 8px; background: #fff;
+  padding: 12px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.045);
+}
+.card.blue   { border-left: 5px solid #0078D4; }
+.card.green  { border-left: 5px solid #107C10; }
+.card.purple { border-left: 5px solid #6E5494; }
+.card.orange { border-left: 5px solid #CA5010; }
+.card.grey   { border-left: 5px solid #A19F9D; }
+
+/* Dashed means it does not exist yet. */
+.card.dashed {
+  border: 2px dashed #D2D0CE; background: #FCFCFC; box-shadow: none; padding: 11px 15px;
+}
+
+.title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.card-title { font-size: 15px; font-weight: 700; }
+.card-body  { font-size: 12px; color: #605E5C; line-height: 1.5; }
+.ico { width: 18px; height: 18px; flex: 0 0 18px; }
+
+.tag {
+  font-size: 9.5px; font-weight: 700; line-height: 1; letter-spacing: .2px;
+  padding: 4px 7px; border-radius: 4px; color: #605E5C; background: #F3F2F1;
+  text-transform: uppercase; white-space: nowrap;
+}
+.tag.todo { color: #8A3B0B; background: #FDF3EC; }
+.tag.now  { color: #0B6A0B; background: #EDF6ED; }
+.tag.them { color: #1E40AF; background: #EDF2FB; }
+
+/* --- a row of cards joined by connectors -------------------------------- */
+.row { display: grid; grid-template-columns: 1fr 120px 1fr 120px 1fr; align-items: stretch; }
+.row.two { grid-template-columns: 1fr 120px 1fr; }
+.row.four { grid-template-columns: 1fr 92px 1fr 92px 1fr 92px 1fr; }
+.row .card { display: flex; flex-direction: column; justify-content: center; }
+
+.conn {
+  text-align: center; font-size: 11px; color: #605E5C; line-height: 1.45; padding: 0 6px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.conn .glyph { display: block; font-size: 13px; color: #A19F9D; margin-bottom: 2px; }
+/* A connector column is narrow. Inline code in one overflows into the card
+   beside it and gets clipped, so it loses the chip styling and is allowed to
+   wrap. */
+.conn code {
+  background: none; padding: 0; font-size: 10.5px;
+  overflow-wrap: anywhere; color: #3B3A39;
+}
+.conn.pending .glyph { color: #CA5010; }
+
+.split { display: flex; align-items: center; gap: 12px; height: 34px; font-size: 11px;
+         font-weight: 700; color: #605E5C; }
+.split::before, .split::after { content: ''; flex: 1; height: 1px; background: #EDEBE9; }
+
+/* --- grids -------------------------------------------------------------- */
+.two-col   { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.three     { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.four-col  { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+/* --- swimlanes ---------------------------------------------------------- */
+.lane { display: grid; grid-template-columns: 150px 1fr; gap: 16px; align-items: stretch; }
+.lane + .lane { margin-top: 14px; }
+.lane-name {
+  display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  padding: 12px 14px; border-radius: 8px; background: #FAF9F8; border: 1px solid #EDEBE9;
+}
+.lane-name .who { font-size: 13px; font-weight: 700; color: #243A5E; line-height: 1.25; }
+.lane-name .sub { font-size: 11px; color: #605E5C; line-height: 1.35; }
+.lane-body { display: grid; gap: 12px; align-items: stretch; }
+
+/* --- tables ------------------------------------------------------------- */
+table { border-collapse: collapse; width: 100%; margin-top: 4px; }
+th, td {
+  text-align: left; font-size: 12px; padding: 8px 12px;
+  border-bottom: 1px solid #F3F2F1; vertical-align: top;
+}
+th { font-size: 11px; font-weight: 700; color: #243A5E; text-transform: uppercase;
+     letter-spacing: .3px; border-bottom: 1px solid #EDEBE9; }
+td.k { font-weight: 700; color: #201F1E; white-space: nowrap; }
+td.d { color: #605E5C; line-height: 1.5; }
+
+/* --- code --------------------------------------------------------------- */
+code {
+  font-family: Consolas, 'Cascadia Mono', monospace; font-size: .93em;
+  background: #F3F2F1; padding: 1px 5px; border-radius: 3px; color: #3B3A39;
+}
+pre {
+  margin-top: 10px; font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: 11px; line-height: 1.5; color: #3B3A39;
+  background: #F8F8F7; border: 1px solid #EDEBE9; border-radius: 6px; padding: 11px 13px;
+  white-space: pre;
+}
+
+.caption { margin-top: 26px; font-size: 12px; color: #605E5C; line-height: 1.6; max-width: 1050px; }

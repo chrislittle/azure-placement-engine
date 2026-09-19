@@ -18,14 +18,13 @@ Bicep cannot read quota state — see
 `existing` fails the whole deployment with `NotFound` when a resource is absent.
 `deploymentScripts` is idempotent, so a quota read would keep its first value.
 
-So the shape is:
+So the shape is: PowerShell reads and decides, and writes a `.bicepparam`.
+Bicep takes that and writes the quota. On the Terraform path all three steps are
+Terraform; here only the last one can be Bicep.
 
-```
-PowerShell:  read quota + SKUs  ->  decide  ->  aqv-apply.bicepparam
-Bicep:       aqv-apply.bicep    ->  write the quota
-
-             quota group (the pool)  ->  allocate     NOT BUILT YET
-```
+<p align="left">
+  <img src="../../docs/images/architecture.png" alt="The two stages, the Terraform and Bicep paths side by side, and where the quota group pool fits" width="820" />
+</p>
 
 On the Terraform path all three steps are Terraform. Here only the last one can
 be Bicep.

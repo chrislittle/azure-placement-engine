@@ -13,21 +13,13 @@ AQV is that script, written as Terraform modules.
 
 ## Where it runs
 
-```
-data collection  ->  request pipeline  ->  subscription parameter file
-                                                    |
-                          stage 1: avm-ptn-sub-vending (creates the subscription)
-                                                    |
-                                            subscription_id
-                                                    |
-                          stage 2: aqv-read -> aqv-decide -> aqv-apply
-                                                                  ^
-                                          quota group (the pool) -'  NOT BUILT YET
-```
+<p align="left">
+  <img src="../../docs/images/architecture.png" alt="The two stages, where the quota is meant to come from, the Terraform and Bicep paths, and what the application team receives" width="820" />
+</p>
 
-The quota group is where the quota is meant to come from: a pool the platform
-owns, allocated self-service. That layer is not built, so today `aqv-apply`
-writes the regional cap and nothing else.
+The quota group in that picture is where the quota is meant to come from: a
+pool the platform owns, allocated self-service. **That layer is not built**, so
+today `aqv-apply` writes the regional cap and nothing else.
 
 `subscription_id` is the entire handoff contract, and `avm-ptn-sub-vending`
 already outputs it. The two stages otherwise share only the parameter file.

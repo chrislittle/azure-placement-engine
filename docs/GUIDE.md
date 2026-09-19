@@ -27,29 +27,16 @@ have access to the platform repository.
 Everything else belongs to the platform team: the form, the automation behind
 it, both YAML files, and the pipelines.
 
-```mermaid
-flowchart LR
-    F["<b>Intake form</b><br/>application team"]
-    RP["<b>Request pipeline</b><br/>generates the request file"]
-    PR["<b>Pull request</b><br/>platform team reviews"]
-    S1["<b>Stage 1</b><br/>sub-vending"]
-    S2["<b>Stage 2 — AQV</b><br/>read → decide → apply"]
-    DEP["<b>Deploy</b><br/>application team"]
-
-    F --> RP --> PR --> S1 --> S2 --> DEP
-    RULES["<b>rules.yaml</b><br/>platform team"] --> S2
-    QG["<b>Quota group</b><br/>the platform's pool<br/><i>not built yet</i>"] -.->|allocate| S2
-
-    classDef pending stroke-dasharray: 5 5
-    class QG pending
-```
+<p align="left">
+  <img src="images/personas.png" alt="Who owns each part: the application team's intake form, the platform team's request pipeline and rules, both pipeline stages, and what the workload team receives" width="900" />
+</p>
 
 The application team touches the first box and the last one. Everything between
 belongs to the platform team.
 
-The dashed box is the quota group, the pool stage 2 is meant to allocate from.
-It is **not built yet**, so today stage 2 reports what the subscription can
-already run and writes only the regional cap.
+The quota group is the pool stage 2 is meant to allocate from. It is **not built
+yet**, so today stage 2 reports what the subscription can already run and writes
+only the regional cap.
 
 ### The boundary
 
@@ -936,10 +923,9 @@ refuses.
 
 AQV applies four gates, in this order.
 
-```mermaid
-flowchart LR
-    A[1. Region] --> B[2. Lifecycle] --> C[3. Access] --> D["4. Quota<br/><i>held, or in the pool</i>"] --> E[Decision]
-```
+<p align="left">
+  <img src="images/decision-gates.png" alt="The four gates in order, every status with what it means and what to do, and the decision fields worth reading" width="900" />
+</p>
 
 | Gate | Question | Failure status |
 |---|---|---|
@@ -1021,6 +1007,10 @@ the quota back before treating it as a refusal.
 ---
 
 ## GitHub Actions
+
+<p align="left">
+  <img src="images/pipeline.png" alt="The three workflows and their triggers, how stage 2 is wired to stage 1, the OIDC identity and the two roles it needs, and the runner variables" width="900" />
+</p>
 
 Three workflows ship in [`.github/workflows`](../.github/workflows):
 

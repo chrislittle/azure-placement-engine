@@ -1,0 +1,198 @@
+<meta charset="utf-8">
+<!--
+  Source for docs/images/architecture.png, used in the repository README.
+  Render with docs/images/src/render.ps1.
+-->
+<style>{{style}}</style>
+
+<h1>Azure Quota Vending: how it fits together</h1>
+
+<p class="lede">
+  A subscription vending module creates a subscription. It arrives with Azure's
+  default quota, which is often zero for the family the workload needs. AQV runs
+  next, as a second stage, and takes one value from the first: the subscription
+  ID. <b>It deploys nothing.</b> It sets quota and names the family and the sizes
+  the application team should deploy into.
+</p>
+
+<div class="head">
+  <span class="head-title">The two stages</span>
+  <span class="pill grey">one handoff value</span>
+</div>
+
+<div class="row four">
+  <div class="card grey">
+    <div class="title-row">
+      <img class="ico" src="{{icon:templates}}" alt="">
+      <span class="card-title">Stage 1</span>
+    </div>
+    <div class="card-body">
+      <code>avm-ptn-sub-vending</code><br>
+      Creates the subscription. Identity, governance, networking, budgets.
+      <b>No quota inputs at all.</b>
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span><code>subscription_id</code></div>
+
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:quotas}}" alt="">
+      <span class="card-title">aqv-read</span>
+    </div>
+    <div class="card-body">
+      Quota, the VM sizes Azure will let it deploy, region and zone access,
+      provider registration.
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span>state</div>
+
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:workflow}}" alt="">
+      <span class="card-title">aqv-decide</span>
+    </div>
+    <div class="card-body">
+      Four gates, in order. Picks a family, names the deployable sizes, and
+      records why every other family lost. <b>Holds no resources.</b>
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span><code>writes_required</code></div>
+
+  <div class="card blue">
+    <div class="title-row">
+      <img class="ico" src="{{icon:quotas}}" alt="">
+      <span class="card-title">aqv-apply</span>
+    </div>
+    <div class="card-body">
+      Writes the quota the decision asked for. <code>limit</code> is absolute,
+      never a delta, which is what makes it desired state.
+    </div>
+  </div>
+</div>
+
+<div class="head">
+  <span class="head-title">Where the quota comes from</span>
+  <span class="pill orange">the pool is not built yet</span>
+</div>
+
+<div class="two-col">
+  <div class="card dashed">
+    <div class="title-row">
+      <img class="ico" src="{{icon:mgroups}}" alt="">
+      <span class="card-title">Quota group</span>
+      <span class="tag todo">to build</span>
+    </div>
+    <div class="card-body">
+      <code>Microsoft.Quota/groupQuotas</code>, held at a management group. A
+      pool the platform fills by reclaiming quota that subscriptions hold and
+      never use. Allocating out of it is self-service and <b>succeeds</b>.
+      <br><br>
+      This is the design. Until it is built, <code>available</code> is null on
+      every family, nothing is allocatable, and an ask above the current limit
+      comes back <code>infeasible</code>.
+    </div>
+  </div>
+
+  <div class="card orange">
+    <div class="title-row">
+      <img class="ico" src="{{icon:policy}}" alt="">
+      <span class="card-title">Why not just ask Azure for more</span>
+    </div>
+    <div class="card-body">
+      A per-subscription quota increase is <b>evaluated, not granted</b>. It is
+      refused when regional capacity is short, and the refusal arrives minutes
+      later with a code that cannot be retried.
+      <br><br>
+      A vending pipeline cannot depend on that, so AQV does not ask. A family is
+      only chosen when the quota it already holds, or a pool behind it, covers
+      the request.
+    </div>
+  </div>
+</div>
+
+<div class="head">
+  <span class="head-title">Two paths, one set of answers</span>
+  <span class="pill purple">Bicep cannot read</span>
+</div>
+
+<table>
+  <tr><th style="width:120px">Path</th><th>read</th><th>decide</th><th>apply</th></tr>
+  <tr>
+    <td class="k">Terraform</td>
+    <td class="d"><code>modules/aqv-read</code></td>
+    <td class="d"><code>modules/aqv-decide</code></td>
+    <td class="d"><code>modules/aqv-apply</code></td>
+  </tr>
+  <tr>
+    <td class="k">Bicep</td>
+    <td class="d"><code>powershell/AqvRead.psm1</code></td>
+    <td class="d"><code>powershell/AqvDecide.psm1</code></td>
+    <td class="d"><code>bicep/aqv-apply.bicep</code></td>
+  </tr>
+</table>
+
+<div class="two-col" style="margin-top:18px">
+  <div class="card purple">
+    <div class="title-row">
+      <img class="ico" src="{{icon:code}}" alt="">
+      <span class="card-title">Bicep only writes</span>
+    </div>
+    <div class="card-body">
+      <code>existing</code> needs a known resource ID and fails the whole
+      deployment when the resource is absent. <code>deploymentScripts</code> is
+      idempotent, so a quota read would keep its first value. AQV has to report
+      a missing region grant as an <i>answer</i>, not as a crash, so on that path
+      PowerShell reads and decides and Bicep writes.
+    </div>
+  </div>
+  <div class="card green">
+    <div class="title-row">
+      <img class="ico" src="{{icon:toolbox}}" alt="">
+      <span class="card-title">What stops them drifting</span>
+    </div>
+    <div class="card-body">
+      The decision logic exists twice, so <code>conformance/</code> holds one set
+      of language-neutral scenarios that <b>both</b> implementations must pass.
+      It has already caught four real divergences, including one where Terraform
+      returned an empty size list while PowerShell did not.
+    </div>
+  </div>
+</div>
+
+<div class="head">
+  <span class="head-title">What the application team gets</span>
+  <span class="pill blue">they deploy, not AQV</span>
+</div>
+
+<div class="row two">
+  <div class="card green">
+    <div class="title-row">
+      <img class="ico" src="{{icon:guide}}" alt="">
+      <span class="card-title">decision.json</span>
+    </div>
+    <div class="card-body">
+      The family their quota is for, the sizes inside it that fit, how many of
+      each the request needs, and the zones each size can go in. Plus every
+      family that was considered and why it lost.
+    </div>
+  </div>
+  <div class="conn"><span class="glyph">&#9654;</span>their own<br>pipeline</div>
+  <div class="card green">
+    <div class="title-row">
+      <img class="ico" src="{{icon:vm}}" alt="">
+      <span class="card-title">Their virtual machines</span>
+    </div>
+    <div class="card-body">
+      A family cannot be deployed; a size can. They put the size in their own
+      IaC. <b>Nothing in this repository deploys anything.</b>
+    </div>
+  </div>
+</div>
+
+<div class="caption">
+  Two stages rather than one module, because a new subscription does not exist
+  when Terraform makes a plan. Stage 2 runs against a subscription that already
+  exists, so the plan shows the chosen family, the quota to be written and the
+  reason each other family was rejected &mdash; all reviewable before anything is
+  written.
+</div>
