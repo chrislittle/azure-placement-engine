@@ -79,6 +79,46 @@ if ($types -contains 'MicrosoftCustomerAgreement') {
     Write-Host '    MCA found. Confirm it is MCA-Enterprise, not MCA-Online.' -ForegroundColor Yellow
 }
 
+# --- A1b: the check that actually decides -------------------------------
+# Adding a subscription to a group is refused with HTTP 400 and
+# "QuotaId does not contain EnterpriseAgreement or Internal". That is a
+# substring test on the subscription's own quotaId, so it can be answered here
+# with a read, before anything is attempted.
+Write-Host ''
+Write-Host '  Subscription eligibility' -ForegroundColor Cyan
+$quotaIds = [ordered]@{}
+$eligibleSubs = @()
+foreach ($sub in @($DonorSubscriptionId, $TargetSubscriptionId)) {
+    $label = if ($sub -eq $DonorSubscriptionId) { 'donor' } else { 'target' }
+    $d = Invoke-AqvApi -Method GET -Path "/subscriptions/$sub" -ApiVersion '2022-12-01' `
+        -Purpose "A1: quotaId for the $label subscription"
+    $qid = Get-AqvProp $d.Body 'subscriptionPolicies' 'quotaId'
+
+    # The error message names these two and nothing else. Whether an
+    # MCA-Enterprise subscription carries one of them is exactly what this run
+    # is meant to find out, so a value that matches neither is reported rather
+    # than treated as final.
+    $ok = $qid -and ($qid -match 'EnterpriseAgreement|Internal')
+    $quotaIds[$label] = [ordered]@{ subscription_id = $sub; quota_id = $qid; matches_known_eligible = $ok }
+    if ($ok) { $eligibleSubs += $label }
+
+    Write-Host ("    {0,-8} quotaId {1,-32} {2}" -f $label, ($qid ?? 'unreadable'),
+        $(if ($ok) { 'eligible' } else { 'NOT eligible' })) `
+        -ForegroundColor $(if ($ok) { 'Green' } else { 'Yellow' })
+}
+$summary.quota_ids = $quotaIds
+$summary.eligible_subscriptions = $eligibleSubs
+
+if ($eligibleSubs.Count -lt 2) {
+    Write-Host ''
+    Write-Host '    Group membership will be refused for any subscription above marked' -ForegroundColor Yellow
+    Write-Host '    NOT eligible, with HTTP 400:'
+    Write-Host '      "QuotaId does not contain EnterpriseAgreement or Internal"'
+    Write-Host '    Measured, not guessed: PayAsYouGo_2014-09-01 and MSDN_2014-09-01 both fail.'
+    Write-Host '    If your quotaId is an MCA one, run step 3 anyway and record what happens:'
+    Write-Host '    whether MCA is supported at all is an open question.'
+}
+
 # --- A2: the GroupQuota Request Operator role ---------------------------
 Write-Host ''
 Write-Host '  Roles' -ForegroundColor Cyan
@@ -224,8 +264,14 @@ $file = Save-AqvCapture -Name '00-preflight' -Summary $summary
 
 Write-Host ''
 Write-Host '  Result' -ForegroundColor Cyan
-if ($summary.eligible_agreement_found) {
-    Write-Host '    Eligible agreement type found. Step 1 can run.' -ForegroundColor Green
+if ($eligibleSubs.Count -eq 2) {
+    Write-Host '    Both subscriptions carry an eligible quotaId. Step 1 can run.' -ForegroundColor Green
+}
+elseif ($summary.eligible_agreement_found) {
+    Write-Host '    The billing account looks eligible, but at least one subscription''s' -ForegroundColor Yellow
+    Write-Host '    quotaId does not contain EnterpriseAgreement or Internal. The quotaId is'
+    Write-Host '    what the membership call tests, so expect step 3 to be refused.'
+    Write-Host '    Run it anyway and send the capture: that refusal is itself a finding.'
 }
 else {
     Write-Host '    No eligible agreement type found.' -ForegroundColor Red

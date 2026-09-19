@@ -61,6 +61,13 @@ built on unverified reading.
 Every write is reversed by the teardown step, and every step asks before it
 runs.
 
+> **How to know in one read whether this will work at all.** Membership is
+> refused with HTTP 400 and *"QuotaId does not contain EnterpriseAgreement or
+> Internal"*. That is a substring test on `subscriptionPolicies.quotaId`, which
+> step 0 reads before anything is attempted. `PayAsYouGo_2014-09-01` and
+> `MSDN_2014-09-01` both fail, measured. Creating and reading a group are **not**
+> gated; only membership is.
+
 > **It uses the quota group you already have.** It does not create one, and it
 > will not delete one. If you have no group at all and want to try this in a
 > sandbox, `scripts/New-SandboxGroup.ps1` stands one up; it is deliberately
@@ -76,7 +83,8 @@ runs.
 
 | Need | Detail |
 |---|---|
-| Billing account | EA, MCA-Enterprise or Internal. The agent checks this first and stops if it is not |
+| Billing account | EA, MCA-Enterprise or Internal |
+| Subscription `quotaId` | Must contain `EnterpriseAgreement` or `Internal`. Step 0 reads it and says so. This is the test the API actually applies |
 | Subscriptions | **Two**, in the same tenant. One donor with spare vCPU quota, one target. Non-production |
 | Quota group | **One you already have.** The collector joins it; it does not create one |
 | Management group | The one your quota group sits under |
@@ -198,9 +206,15 @@ Steps 0, 1, 2, 7 and 9 were run end to end against a live Azure tenant, and
 Every write in them is built from the shapes the read APIs return and from
 Microsoft's documentation. At least one call may be wrong.
 
-One write *has* been exercised, on an ordinary tenant: `PUT locationSettings`
-with `{"properties": {"enforcementEnabled": "Enabled"}}` is accepted. What it
-then does is question A2, and is why step 3 has an `-Enforce` switch.
+Two writes *have* been exercised, on an ordinary tenant:
+
+- **Membership** is refused synchronously, HTTP 400 in about 1.2 seconds, with
+  the quotaId message above. Step 3 handled it correctly: it recorded the error
+  and added nothing.
+- **Enforcement** is accepted, HTTP 201 with an async operation header, and then
+  never lands. Twenty minutes later nothing had changed. So a 201 there proves
+  nothing, which is why the findings file asks for the polled result rather than
+  the body.
 
 That is expected, and it is why the agent is told not to work around a failure.
 A verbatim error from a call that did not work is worth more than a call that

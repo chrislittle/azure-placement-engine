@@ -142,22 +142,6 @@ verified_reads:
       forever.
     severity: blocking
 
-# A trap that cost a debugging round, and would cost anyone else one.
-async_poll_urls:
-  finding: >
-    The Location and Azure-AsyncOperation headers on a Microsoft.Quota
-    long-running operation carry a SIGNED query string -- t, c, s and h
-    parameters alongside api-version.
-  do_not: >
-    Rewrite any part of it. Stripping api-version to re-add it, or rebuilding
-    the URL from the path, breaks the signature and the poll returns
-    401 AuthorizationFailed: "Unable to verify that the user that sent this
-    request is the original caller of the asynchronous operation being polled."
-  consequence: >
-    That error reads like a permissions problem and is not one. It is the same
-    message seen when polling a quota operation as a different principal, so the
-    two are easy to confuse. Use the header verbatim.
-
   # --- Server errors on a documented type -------------------------------
   quota_allocation_requests_500:
     path: GET {group}/resourceProviders/Microsoft.Compute/quotaAllocationRequests
@@ -196,6 +180,40 @@ async_poll_urls:
       no group object. It is also preview/alpha only.
     unknown: Everything except that the endpoints exist and are readable.
     severity: investigate
+
+  # --- WHERE THE ELIGIBILITY GATE ACTUALLY IS ---------------------------
+  eligibility_gate:
+    finding: >
+      Membership is the gate, and it is SYNCHRONOUS. Adding a subscription to a
+      group returns HTTP 400 immediately:
+      "{sub} is not eligible to use Group Quota functionality. QuotaId does not
+      contain EnterpriseAgreement or Internal"
+    measured: >
+      Tried on 2026-09-19 against a real group, with two subscriptions:
+      PayAsYouGo_2014-09-01 and MSDN_2014-09-01. Both refused, 400 in about
+      1.2 seconds, nothing added to the group.
+    not_gated: >
+      Creating a group is NOT gated: a Microsoft.Quota/groupQuotas object exists
+      and reads normally on an MCA-Individual tenant. Neither is reading any of
+      the group APIs. Only membership is.
+    checkable_before_trying: >
+      GET /subscriptions/{id}?api-version=2022-12-01 returns
+      subscriptionPolicies.quotaId. The gate is a substring test on that value,
+      so AQV can decide a subscription is ineligible with one read and no write.
+      Observed values that FAIL: PayAsYouGo_2014-09-01, MSDN_2014-09-01.
+    contradicts: >
+      constraints.billing_accounts above says [EA, MCA, Internal]. The error
+      message names only EnterpriseAgreement and Internal. Either an
+      MCA-Enterprise subscription carries a quotaId that CONTAINS
+      "EnterpriseAgreement" -- plausible, since subscriptions migrated from EA
+      often keep EnterpriseAgreement_2014-09-01 -- or MCA is not supported at
+      all despite the documentation. Unresolved, and it decides who can use
+      this feature.
+    implication_for_aqv: >
+      A precondition check in aqv-read, not a failure at apply time. Read the
+      quotaId, and when it contains neither string, report the subscription as
+      outside the group path instead of letting a write fail later.
+    severity: answered
 
   # --- The API version spread was wrong ---------------------------------
   api_versions:
@@ -445,3 +463,19 @@ reallocation_note: >
   be a scale set that bursts to 480 nightly, and harvesting to usage-plus-margin
   would break it. Owners should declare a floor they keep; usage informs the
   recommendation, the declaration authorises the take.
+
+# A trap that cost a debugging round, and would cost anyone else one.
+async_poll_urls:
+  finding: >
+    The Location and Azure-AsyncOperation headers on a Microsoft.Quota
+    long-running operation carry a SIGNED query string -- t, c, s and h
+    parameters alongside api-version.
+  do_not: >
+    Rewrite any part of it. Stripping api-version to re-add it, or rebuilding
+    the URL from the path, breaks the signature and the poll returns
+    401 AuthorizationFailed: "Unable to verify that the user that sent this
+    request is the original caller of the asynchronous operation being polled."
+  consequence: >
+    That error reads like a permissions problem and is not one. It is the same
+    message seen when polling a quota operation as a different principal, so the
+    two are easy to confuse. Use the header verbatim.

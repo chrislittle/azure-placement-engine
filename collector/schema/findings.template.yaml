@@ -193,6 +193,27 @@ membership:
     unblocks: The same check.
     answer: null
     capture: null
+    notes: >
+      Do not confuse it with the eligibility refusal, which is already known:
+      HTTP 400 "{sub} is not eligible to use Group Quota functionality. QuotaId
+      does not contain EnterpriseAgreement or Internal". That one is measured.
+      This question is about a DIFFERENT refusal and may not exist.
+
+  - id: C5
+    question: >
+      What is the quotaId of the subscriptions in your group, and does an
+      MCA-Enterprise subscription carry one containing "EnterpriseAgreement"?
+    unblocks: >
+      Whether MCA is supported at all. The eligibility error names only
+      EnterpriseAgreement and Internal, while Microsoft's documentation lists
+      EA, MCA and Internal. One of the two is wrong and it decides who can use
+      this feature.
+    answer: null
+    capture: null
+    notes: >
+      GET /subscriptions/{id}?api-version=2022-12-01, then
+      subscriptionPolicies.quotaId. Step 0 records it. Observed values that
+      FAIL: PayAsYouGo_2014-09-01, MSDN_2014-09-01.
 
   - id: C4
     question: >
